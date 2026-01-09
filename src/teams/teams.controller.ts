@@ -1,13 +1,14 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { TeamsService } from './teams.service';
-import { TeamsResponse } from '../common/teams-response.interface';
+import { TeamsWebhookDto } from './dto/teams-webhook.dto'; // Importa el DTO
 
 @Controller('teams/webhook')
 export class TeamsController {
   constructor(private readonly teamsService: TeamsService) {}
 
   @Post()
-  receive(@Body() body: { text?: string }): Promise<TeamsResponse> {
+  // Recibe el body y lo convierte a nuestro DTO
+  receive(@Body() body: TeamsWebhookDto) {
     return this.teamsService.processTeamsMessage(body);
   }
 }

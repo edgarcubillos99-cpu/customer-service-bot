@@ -9,8 +9,9 @@ async function bootstrap() {
   //CONFIGURANDO PIPES GLOBALES
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
+      whitelist: true, //Elimina campos que no estén en nuestro DTO
+      forbidNonWhitelisted: true, // Lanza error si envían datos extraños
+      transform: true, // Convierte los datos a los tipos definidos en nuestros DTOs
     }),
   );
 
@@ -35,4 +36,7 @@ async function bootstrap() {
 
   console.log(`Application is running on PORT ${port}`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

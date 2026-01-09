@@ -17,6 +17,11 @@ export class WhatsappService {
   ) {
     this.token = this.configService.get<string>('whatsappToken') ?? '';
     this.phoneId = this.configService.get<string>('whatsappPhoneId') ?? '';
+
+    console.log(
+      'WhatsApp Service Inicializado con Token:',
+      this.token ? 'PRESENTE' : 'FALTANTE',
+    );
   }
 
   async sendMessage(to: string, message: string): Promise<WhatsappResponse> {
