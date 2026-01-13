@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import configuration from './config/configuration';
 import { TeamsModule } from './teams/teams.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { TeamsModule } from './teams/teams.module';
       isGlobal: true,
     }),
     TeamsModule,
+    WhatsappModule,
   ],
   controllers: [AppController],
   providers: [AppService],
