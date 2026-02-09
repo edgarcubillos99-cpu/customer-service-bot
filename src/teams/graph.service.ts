@@ -63,6 +63,25 @@ export class GraphService {
     }
   }
 
+  async replyToThread(threadId: string, content: string) {
+    const teamId = this.configService.get<string>('teamsTeamId');
+    const channelId = this.configService.get<string>('teamsChannelId');
+
+    const reply = {
+      body: {
+        contentType: 'html',
+        content: content,
+      },
+    };
+
+    // Esta ruta permite responder a un mensaje específico creando un hilo
+    return await this.graphClient
+      .api(
+        `/teams/${teamId}/channels/${channelId}/messages/${threadId}/replies`,
+      )
+      .post(reply);
+  }
+
   async sendMessageToChannel(
     userName: string,
     userPhone: string,

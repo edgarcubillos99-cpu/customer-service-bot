@@ -1,44 +1,52 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
-import { TeamsResponse } from '../common/teams-response.interface';
+import { ConversationsService } from '../conversations/conversations.service';
+import { TeamsWebhookDto } from './dto/teams-webhook.dto';
 
 @Injectable()
 export class TeamsService {
-  private readonly botName: string;
-
   constructor(
-    private readonly configService: ConfigService,
     private readonly whatsappService: WhatsappService,
-  ) {
-    this.botName = this.configService.get<string>('teamsBotName') ?? 'botito';
-  }
+    private readonly conversationsService: ConversationsService, // Inyectamos la DB
+  ) {}
 
-  async processTeamsMessage(body: { text?: string }): Promise<TeamsResponse> {
-    const text: string = body?.text ?? '';
+  async handleWebhook(body: TeamsWebhookDto) {
+    const message = body.value;
 
-    const regex = new RegExp(
-      `@${this.botName}\\s+(\\d{6,15})\\s+([\\s\\S]+)`, //formato del mensaje a enviar al whatsapp: '@botname' 'numero del cliente' 'mensaje'
-      'i',
-    );
-    const match = text.match(regex);
-
-    if (!match) {
-      return {
-        ok: false,
-        message: 'No es un comando válido para el bot.',
-      };
+    // Evitar que el bot se responda a sí mismo
+    if (message.from?.application?.displayName === 'TuNombreDeBot') {
+      return;
     }
 
-    const clientNumber = match[1];
-    const messageToSend = match[2].trim();
+    // 1. Obtener el ID del mensaje padre (Thread ID)
+    // En Teams, si es una respuesta, el replyToId nos indica el mensaje raíz
+    const threadId = message.replyToId;
 
-    await this.whatsappService.sendMessage(clientNumber, messageToSend);
+    if (threadId) {
+      // 2. Buscar en la base de datos a quién pertenece ese hilo
+      const conversation =
+        await this.conversationsService.findByThreadId(threadId);
 
-    return {
-      ok: true,
-      sentTo: clientNumber,
-      message: messageToSend,
-    };
+      if (conversation) {
+        const text = message.body.content.replace(/<[^>]*>?/gm, ''); // Limpiar HTML de Teams
+
+        // 3. Enviar a WhatsApp usando el número guardado
+        await this.whatsappService.sendMessage(
+          conversation.waPhoneNumber,
+          text,
+        );
+        console.log(
+          `✅ Respuesta enviada a WhatsApp: ${conversation.waPhoneNumber}`,
+        );
+      } else {
+        console.log(
+          '⚠️ No se encontró una conversación activa para este hilo.',
+        );
+      }
+    }
   }
 }

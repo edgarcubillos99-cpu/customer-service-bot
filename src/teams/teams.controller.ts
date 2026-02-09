@@ -8,7 +8,7 @@ export class TeamsController {
 
   @Post()
   // Recibe el body y lo convierte a nuestro DTO
-  receive(@Body() body: TeamsWebhookDto) {
-    return this.teamsService.processTeamsMessage(body);
+  async receive(@Body() body: TeamsWebhookDto) {
+    return this.teamsService.handleWebhook(body);
   }
 }

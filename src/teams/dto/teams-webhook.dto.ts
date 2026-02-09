@@ -3,6 +3,7 @@
 import { IsString, IsOptional, IsNotEmpty } from 'class-validator';
 
 export class TeamsWebhookDto {
+  [x: string]: any;
   @IsString({ message: 'El texto debe ser una cadena de caracteres' })
   @IsNotEmpty({ message: 'El cuerpo del mensaje no puede estar vacío' })
   @IsOptional() // Lo ponemos opcional porque a veces Teams envía notificaciones sin texto
