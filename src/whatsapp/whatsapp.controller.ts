@@ -62,6 +62,8 @@ export class WhatsappController {
           await this.graphService.replyToThread(
             conversation.teamsThreadId,
             text,
+            name,
+            from,
           );
           console.log('✅ Mensaje añadido al hilo de Teams');
         } else {

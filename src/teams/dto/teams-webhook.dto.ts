@@ -6,16 +6,29 @@ import { Type } from 'class-transformer';
 class TeamsMessageFrom {
   application?: {
     displayName?: string;
+    applicationIdentityType?: string;
+    id?: string;
+    '@odata.type'?: string;
   };
   user?: {
     displayName?: string;
     id?: string;
   };
+  device?: any;
 }
 
 class TeamsMessageBody {
   contentType?: string;
   content?: string;
+}
+
+class TeamsAttachment {
+  id?: string;
+  contentType?: string;
+  content?: string;
+  contentUrl?: string;
+  name?: string;
+  thumbnailUrl?: string;
 }
 
 class TeamsMessageValue {
@@ -25,6 +38,7 @@ class TeamsMessageValue {
   createdDateTime?: string;
   from?: TeamsMessageFrom;
   body?: TeamsMessageBody;
+  attachments?: TeamsAttachment[];
   channelIdentity?: {
     teamId?: string;
     channelId?: string;

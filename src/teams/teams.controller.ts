@@ -39,14 +39,36 @@ export class TeamsController {
     }
 
     // Si no hay validationToken, es una notificación real
-    console.log(
-      '📥 Notificación de Graph API recibida:',
-      JSON.stringify(body, null, 2),
-    );
 
     try {
-      // Las notificaciones de Graph API vienen en formato diferente
-      // body.value es un array de cambios
+      // Verificar si es una notificación de ciclo de vida de la suscripción
+      if (body.lifecycleEvent) {
+        console.log('🔄 Notificación de ciclo de vida de suscripción:', {
+          lifecycleEvent: body.lifecycleEvent,
+          subscriptionId: body.subscriptionId,
+          subscriptionExpirationDateTime: body.subscriptionExpirationDateTime,
+        });
+
+        // Si la suscripción está por expirar, renovarla automáticamente
+        if (body.lifecycleEvent === 'reauthorizationRequired') {
+          console.log('⚠️ Suscripción requiere reautorización');
+          // Intentar renovar la suscripción
+          if (body.subscriptionId) {
+            try {
+              await this.graphService.renewSubscription(body.subscriptionId);
+            } catch (error: any) {
+              console.error(
+                '❌ Error renovando suscripción automáticamente:',
+                error?.message,
+              );
+            }
+          }
+        }
+
+        return { status: 'OK' };
+      }
+
+      // Las notificaciones de mensajes vienen en body.value como un array de cambios
       const notifications = (
         body as { value?: Array<{ resourceData?: { id?: string } }> }
       ).value;

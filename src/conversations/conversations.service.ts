@@ -24,6 +24,14 @@ export class ConversationsService {
     });
   }
 
+  // Busca la conversación más reciente abierta
+  async findMostRecentOpen(): Promise<Conversation | null> {
+    return await this.conversationRepository.findOne({
+      where: { status: 'OPEN' },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
   // Registra un nuevo hilo cuando llega el primer mensaje
   async create(data: {
     waPhoneNumber: string;
@@ -37,5 +45,10 @@ export class ConversationsService {
   // Opcional: Cerrar el hilo para permitir que uno nuevo se cree después
   async closeConversation(id: number) {
     await this.conversationRepository.update(id, { status: 'CLOSED' });
+  }
+
+  // Actualiza el teamsThreadId de una conversación
+  async updateThreadId(id: number, teamsThreadId: string) {
+    await this.conversationRepository.update(id, { teamsThreadId });
   }
 }

@@ -77,7 +77,12 @@ export class GraphService {
     }
   }
 
-  async replyToThread(threadId: string, content: string) {
+  async replyToThread(
+    threadId: string,
+    content: string,
+    userName: string,
+    userPhone: string,
+  ) {
     // Los webhooks no soportan respuestas directas a hilos
     // En su lugar, enviamos el mensaje con contexto del hilo
     if (this.webhookUrl) {
@@ -85,14 +90,35 @@ export class GraphService {
         `📤 Enviando respuesta a hilo ${threadId} vía Webhook (los webhooks no soportan hilos directamente)`,
       );
       // Enviar como mensaje nuevo con referencia al hilo en el contenido
+      // Usar el mismo formato que sendMessageToChannel para mantener consistencia
       const message = {
         '@type': 'MessageCard',
         '@context': 'https://schema.org/extensions',
-        summary: 'Respuesta de WhatsApp',
+        summary: `Nuevo mensaje de WhatsApp de ${userName} - Teléfono: ${userPhone}`,
         themeColor: '25D366',
-        title: '💬 Respuesta de WhatsApp',
-        text: content,
-        markdown: true,
+        title: `📱 Nuevo mensaje de WhatsApp - ${userName}`,
+        sections: [
+          {
+            activityTitle: `Usuario: ${userName}`,
+            activitySubtitle: `Teléfono: ${userPhone}`,
+            facts: [
+              {
+                name: 'Usuario:',
+                value: userName,
+              },
+              {
+                name: 'Teléfono:',
+                value: userPhone,
+              },
+              {
+                name: 'Mensaje:',
+                value: content,
+              },
+            ],
+            text: `Usuario: ${userName}\nTeléfono: ${userPhone}\n\nMensaje:\n${content}`,
+            markdown: true,
+          },
+        ],
       };
 
       try {
@@ -171,17 +197,32 @@ export class GraphService {
     }
 
     // Formato de mensaje para Teams Webhook (soporta HTML básico)
+    // Incluimos el número de teléfono en el text también para poder extraerlo después
     const message = {
       '@type': 'MessageCard',
       '@context': 'https://schema.org/extensions',
-      summary: `Nuevo mensaje de WhatsApp de ${userName}`,
+      summary: `Nuevo mensaje de WhatsApp de ${userName} - Teléfono: ${userPhone}`,
       themeColor: '25D366',
-      title: '📱 Nuevo mensaje de WhatsApp',
+      title: `📱 Nuevo mensaje de WhatsApp - ${userName}`,
       sections: [
         {
-          activityTitle: `**Usuario:** ${userName}`,
-          activitySubtitle: `**Teléfono:** ${userPhone}`,
-          text: content,
+          activityTitle: `Usuario: ${userName}`,
+          activitySubtitle: `Teléfono: ${userPhone}`,
+          facts: [
+            {
+              name: 'Usuario:',
+              value: userName,
+            },
+            {
+              name: 'Teléfono:',
+              value: userPhone,
+            },
+            {
+              name: 'Mensaje:',
+              value: content,
+            },
+          ],
+          text: `Usuario: ${userName}\nTeléfono: ${userPhone}\n\nMensaje:\n${content}`,
           markdown: true,
         },
       ],
@@ -216,6 +257,36 @@ export class GraphService {
   }
 
   /**
+   * Verifica que el canal de Teams existe y es accesible
+   */
+  async verifyChannelAccess(teamId: string, channelId: string): Promise<boolean> {
+    if (!this.graphClient) {
+      return false;
+    }
+
+    try {
+      console.log(`🔍 Verificando acceso al canal: teams/${teamId}/channels/${channelId}`);
+      const channel = await this.graphClient
+        .api(`/teams/${teamId}/channels/${channelId}`)
+        .get();
+      
+      console.log('✅ Canal accesible:', {
+        id: channel.id,
+        displayName: channel.displayName,
+      });
+      return true;
+    } catch (error: any) {
+      console.error('❌ Error verificando acceso al canal:', {
+        message: error?.message,
+        code: error?.code,
+        teamId,
+        channelId,
+      });
+      return false;
+    }
+  }
+
+  /**
    * Crea una suscripción de Microsoft Graph API para recibir eventos de mensajes
    * en el canal de Teams especificado
    */
@@ -238,13 +309,23 @@ export class GraphService {
       );
     }
 
+    // Verificar que el canal es accesible antes de crear la suscripción
+    const hasAccess = await this.verifyChannelAccess(teamId, channelId);
+    if (!hasAccess) {
+      throw new Error(
+        `No se puede acceder al canal. Verifica que TEAMS_TEAM_ID y TEAMS_CHANNEL_ID sean correctos y que la aplicación tenga los permisos necesarios (ChannelMessage.Read.All, etc.)`,
+      );
+    }
+
     // URL del webhook donde recibiremos las notificaciones
     const notificationUrl = `${publicUrl}/teams/webhook/notification`;
 
     // Crear suscripción para recibir eventos de mensajes en el canal
+    // Solo 'created' para evitar procesar actualizaciones de mensajes antiguos
     const subscription = {
-      changeType: 'created,updated',
+      changeType: 'created',
       notificationUrl: notificationUrl,
+      lifecycleNotificationUrl: notificationUrl, // Requerido para suscripciones > 1 hora
       resource: `/teams/${teamId}/channels/${channelId}/messages`,
       expirationDateTime: new Date(
         Date.now() + 3 * 24 * 60 * 60 * 1000,
@@ -253,7 +334,10 @@ export class GraphService {
     };
 
     try {
-      console.log('📡 Creando suscripción de Graph API...');
+      console.log('📡 Creando suscripción de Graph API...', {
+        resource: subscription.resource,
+        notificationUrl: notificationUrl,
+      });
       const result = await this.graphClient
         .api('/subscriptions')
         .post(subscription);
@@ -265,7 +349,19 @@ export class GraphService {
         message: error?.message,
         code: error?.code,
         body: error?.body,
+        resource: subscription.resource,
       });
+      
+      // Proporcionar mensajes de error más útiles
+      if (error?.code === 'ExtensionError' && error?.message?.includes('NotFound')) {
+        throw new Error(
+          `El recurso no fue encontrado. Verifica:\n` +
+          `1. Que TEAMS_TEAM_ID (${teamId}) y TEAMS_CHANNEL_ID (${channelId}) sean correctos\n` +
+          `2. Que la aplicación tenga permisos: ChannelMessage.Read.All, ChannelMessage.Send\n` +
+          `3. Que el canal exista y sea accesible para la aplicación`
+        );
+      }
+      
       throw error;
     }
   }
@@ -313,6 +409,144 @@ export class GraphService {
     } catch (error: any) {
       console.error('❌ Error obteniendo mensaje:', error?.message);
       throw error;
+    }
+  }
+
+  /**
+   * Obtiene una respuesta (reply) específica de un mensaje en Teams
+   */
+  async getReply(
+    teamId: string,
+    channelId: string,
+    parentMessageId: string,
+    replyId: string,
+  ) {
+    if (!this.graphClient) {
+      throw new Error('Graph API no está configurado');
+    }
+
+    try {
+      const reply = await this.graphClient
+        .api(
+          `/teams/${teamId}/channels/${channelId}/messages/${parentMessageId}/replies/${replyId}`,
+        )
+        .get();
+
+      return reply;
+    } catch (error: any) {
+      console.error('❌ Error obteniendo reply:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Lista todas las suscripciones activas
+   */
+  async listSubscriptions(): Promise<any[]> {
+    if (!this.graphClient) {
+      throw new Error('Graph API no está configurado');
+    }
+
+    try {
+      const response = await this.graphClient.api('/subscriptions').get();
+      return response.value || [];
+    } catch (error: any) {
+      console.error('❌ Error listando suscripciones:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Elimina una suscripción
+   */
+  async deleteSubscription(subscriptionId: string): Promise<void> {
+    if (!this.graphClient) {
+      throw new Error('Graph API no está configurado');
+    }
+
+    try {
+      await this.graphClient.api(`/subscriptions/${subscriptionId}`).delete();
+      console.log(`✅ Suscripción ${subscriptionId} eliminada`);
+    } catch (error: any) {
+      console.error('❌ Error eliminando suscripción:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Intenta crear o renovar la suscripción automáticamente
+   * Elimina suscripciones expiradas y crea una nueva si es necesario
+   */
+  async ensureSubscription(): Promise<any> {
+    if (!this.graphClient) {
+      console.log(
+        '⚠️ Graph API no configurado, no se puede crear suscripción automática',
+      );
+      return null;
+    }
+
+    const teamId = this.configService.get<string>('teamsTeamId');
+    const channelId = this.configService.get<string>('teamsChannelId');
+    const publicUrl = this.configService.get<string>('publicUrl');
+
+    if (!teamId || !channelId) {
+      console.log(
+        '⚠️ TEAMS_TEAM_ID y TEAMS_CHANNEL_ID son requeridos para suscripciones',
+      );
+      return null;
+    }
+
+    if (!publicUrl) {
+      console.log(
+        '⚠️ PUBLIC_URL no configurado, no se puede crear suscripción automática',
+      );
+      return null;
+    }
+
+    try {
+      // Listar suscripciones existentes
+      const subscriptions = await this.listSubscriptions();
+      const resource = `/teams/${teamId}/channels/${channelId}/messages`;
+      const notificationUrl = `${publicUrl}/teams/webhook/notification`;
+
+      // Buscar suscripción existente para este recurso
+      const existingSubscription = subscriptions.find(
+        (sub: any) =>
+          sub.resource === resource &&
+          sub.notificationUrl === notificationUrl,
+      );
+
+      if (existingSubscription) {
+        const expirationDate = new Date(existingSubscription.expirationDateTime);
+        const now = new Date();
+        const hoursUntilExpiration =
+          (expirationDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+        // Si la suscripción expira en menos de 24 horas, renovarla
+        if (hoursUntilExpiration < 24) {
+          console.log(
+            `🔄 Suscripción existente expira pronto (${hoursUntilExpiration.toFixed(1)} horas), renovando...`,
+          );
+          return await this.renewSubscription(existingSubscription.id);
+        } else {
+          console.log(
+            `✅ Suscripción activa encontrada (expira en ${hoursUntilExpiration.toFixed(1)} horas)`,
+          );
+          return existingSubscription;
+        }
+      }
+
+      // Si no hay suscripción, crear una nueva
+      console.log('📡 No hay suscripción activa, creando una nueva...');
+      return await this.createSubscription();
+    } catch (error: any) {
+      console.error('❌ Error asegurando suscripción:', {
+        message: error?.message,
+        code: error?.code,
+        body: error?.body,
+      });
+      // No lanzar error para no bloquear el inicio de la aplicación
+      return null;
     }
   }
 }
