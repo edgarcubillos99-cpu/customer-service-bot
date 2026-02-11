@@ -1,3 +1,4 @@
+// aqui se definen las entidades que se van a usar en la base de datos
 import {
   Entity,
   Column,

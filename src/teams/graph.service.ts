@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -259,17 +261,22 @@ export class GraphService {
   /**
    * Verifica que el canal de Teams existe y es accesible
    */
-  async verifyChannelAccess(teamId: string, channelId: string): Promise<boolean> {
+  async verifyChannelAccess(
+    teamId: string,
+    channelId: string,
+  ): Promise<boolean> {
     if (!this.graphClient) {
       return false;
     }
 
     try {
-      console.log(`🔍 Verificando acceso al canal: teams/${teamId}/channels/${channelId}`);
+      console.log(
+        `🔍 Verificando acceso al canal: teams/${teamId}/channels/${channelId}`,
+      );
       const channel = await this.graphClient
         .api(`/teams/${teamId}/channels/${channelId}`)
         .get();
-      
+
       console.log('✅ Canal accesible:', {
         id: channel.id,
         displayName: channel.displayName,
@@ -351,17 +358,20 @@ export class GraphService {
         body: error?.body,
         resource: subscription.resource,
       });
-      
+
       // Proporcionar mensajes de error más útiles
-      if (error?.code === 'ExtensionError' && error?.message?.includes('NotFound')) {
+      if (
+        error?.code === 'ExtensionError' &&
+        error?.message?.includes('NotFound')
+      ) {
         throw new Error(
           `El recurso no fue encontrado. Verifica:\n` +
-          `1. Que TEAMS_TEAM_ID (${teamId}) y TEAMS_CHANNEL_ID (${channelId}) sean correctos\n` +
-          `2. Que la aplicación tenga permisos: ChannelMessage.Read.All, ChannelMessage.Send\n` +
-          `3. Que el canal exista y sea accesible para la aplicación`
+            `1. Que TEAMS_TEAM_ID (${teamId}) y TEAMS_CHANNEL_ID (${channelId}) sean correctos\n` +
+            `2. Que la aplicación tenga permisos: ChannelMessage.Read.All, ChannelMessage.Send\n` +
+            `3. Que el canal exista y sea accesible para la aplicación`,
         );
       }
-      
+
       throw error;
     }
   }
@@ -512,12 +522,13 @@ export class GraphService {
       // Buscar suscripción existente para este recurso
       const existingSubscription = subscriptions.find(
         (sub: any) =>
-          sub.resource === resource &&
-          sub.notificationUrl === notificationUrl,
+          sub.resource === resource && sub.notificationUrl === notificationUrl,
       );
 
       if (existingSubscription) {
-        const expirationDate = new Date(existingSubscription.expirationDateTime);
+        const expirationDate = new Date(
+          existingSubscription.expirationDateTime,
+        );
         const now = new Date();
         const hoursUntilExpiration =
           (expirationDate.getTime() - now.getTime()) / (1000 * 60 * 60);

@@ -6,6 +6,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { MessagesService } from '../messages/messages.service';
 import { TeamsWebhookDto } from './dto/teams-webhook.dto';
 import { Conversation } from '../common/entities/conversation.entity';
 import { GraphService } from './graph.service';
@@ -17,10 +18,13 @@ export class TeamsService implements OnModuleInit {
   // Guarda: messageId -> timestamp
   private readonly processedMessages = new Map<string, number>();
   private readonly DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
+  // Timestamp de cuando se creó la suscripción (para filtrar mensajes antiguos)
+  private subscriptionCreatedAt: Date | null = null;
 
   constructor(
     private readonly whatsappService: WhatsappService,
     private readonly conversationsService: ConversationsService,
+    private readonly messagesService: MessagesService,
     private readonly configService: ConfigService,
     private readonly graphService: GraphService,
   ) {
@@ -80,7 +84,17 @@ export class TeamsService implements OnModuleInit {
     setTimeout(async () => {
       try {
         console.log('🚀 Inicializando suscripción de Graph API...');
-        await this.graphService.ensureSubscription();
+        const subscription = await this.graphService.ensureSubscription();
+        // Guardar el timestamp de cuando se creó/renovó la suscripción
+        // Esto nos permite filtrar mensajes que existían antes de la suscripción
+        if (subscription) {
+          // Si es una suscripción nueva o renovada, usar la fecha actual
+          // Si es una suscripción existente, usar su fecha de creación si está disponible
+          this.subscriptionCreatedAt = new Date();
+          console.log(
+            `📅 Suscripción activa a las ${this.subscriptionCreatedAt.toISOString()}. Solo se procesarán mensajes posteriores a esta fecha.`,
+          );
+        }
       } catch (error: any) {
         console.error(
           '⚠️ No se pudo inicializar la suscripción automáticamente:',
@@ -289,6 +303,25 @@ export class TeamsService implements OnModuleInit {
 
     if (conversation) {
       try {
+        // Guardar el mensaje en la base de datos antes de enviarlo
+        try {
+          await this.messagesService.saveMessage({
+            conversationId: conversation.id,
+            content: text,
+            source: 'teams',
+            teamsMessageId: message.id,
+            senderName:
+              message.from?.user?.displayName ||
+              message.from?.application?.displayName ||
+              'Desconocido',
+          });
+        } catch (msgError: any) {
+          // No fallar si hay error guardando el mensaje, solo loguear
+          console.warn(
+            `⚠️ Error guardando mensaje en BD: ${msgError?.message}`,
+          );
+        }
+
         await this.whatsappService.sendMessage(
           conversation.waPhoneNumber,
           text,
@@ -349,17 +382,37 @@ export class TeamsService implements OnModuleInit {
         );
       }
 
-      // Filtrar mensajes muy antiguos (más de 5 minutos)
-      // Esto evita procesar mensajes antiguos cuando se crea la suscripción
+      // Filtrar mensajes muy antiguos
+      // Si tenemos el timestamp de cuando se creó la suscripción, usar ese
+      // Si no, usar un filtro de 10 minutos como fallback
       if (message.createdDateTime) {
         const messageDate = new Date(message.createdDateTime);
-        const now = new Date();
-        const minutesDiff = (now.getTime() - messageDate.getTime()) / (1000 * 60);
-        
-        if (minutesDiff > 5) {
-          console.log(
-            `⏭️ Mensaje ignorado: muy antiguo (${minutesDiff.toFixed(1)} minutos)`,
-          );
+        let shouldIgnore = false;
+        let reason = '';
+
+        if (this.subscriptionCreatedAt) {
+          // Si el mensaje es anterior a la creación de la suscripción, ignorarlo
+          if (messageDate < this.subscriptionCreatedAt) {
+            shouldIgnore = true;
+            const minutesDiff =
+              (this.subscriptionCreatedAt.getTime() -
+                messageDate.getTime()) /
+              (1000 * 60);
+            reason = `anterior a la suscripción (${minutesDiff.toFixed(1)} minutos antes)`;
+          }
+        } else {
+          // Fallback: ignorar mensajes de más de 10 minutos
+          const now = new Date();
+          const minutesDiff =
+            (now.getTime() - messageDate.getTime()) / (1000 * 60);
+          if (minutesDiff > 10) {
+            shouldIgnore = true;
+            reason = `muy antiguo (${minutesDiff.toFixed(1)} minutos)`;
+          }
+        }
+
+        if (shouldIgnore) {
+          console.log(`⏭️ Mensaje ignorado: ${reason}`);
           return;
         }
       }

@@ -10,15 +10,19 @@ import {
   Res,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { GraphService } from '../teams/graph.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { MessagesService } from '../messages/messages.service';
 
 @Controller('whatsapp/webhook')
 export class WhatsappController {
   constructor(
     private readonly graphService: GraphService,
     private readonly conversationsService: ConversationsService,
+    private readonly messagesService: MessagesService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Get()
@@ -28,9 +32,9 @@ export class WhatsappController {
     @Query('hub.challenge') challenge: string,
     @Res() res: Response,
   ) {
-    const MY_VERIFY_TOKEN = 'e8bf46bbbb8a54d4cce6520f43008a9f5943eb31c4cb343a';
+    const verifyToken = this.configService.get<string>('whatsapp.verifyToken');
 
-    if (mode === 'subscribe' && token === MY_VERIFY_TOKEN) {
+    if (mode === 'subscribe' && token === verifyToken) {
       console.log('¡Webhook verificado con éxito!');
       return res.status(HttpStatus.OK).send(challenge);
     }
@@ -59,6 +63,22 @@ export class WhatsappController {
           console.log(
             `🧵 Añadiendo mensaje al hilo existente: ${conversation.teamsThreadId}`,
           );
+
+          // Guardar el mensaje en la base de datos
+          try {
+            await this.messagesService.saveMessage({
+              conversationId: conversation.id,
+              content: text,
+              source: 'whatsapp',
+              waMessageId: message.id,
+              senderName: name,
+            });
+          } catch (msgError: any) {
+            console.warn(
+              `⚠️ Error guardando mensaje en BD: ${msgError?.message}`,
+            );
+          }
+
           await this.graphService.replyToThread(
             conversation.teamsThreadId,
             text,
@@ -76,12 +96,27 @@ export class WhatsappController {
           );
 
           // 4. Guardamos el ID del mensaje de Teams como el ID del hilo para futuras respuestas
-          await this.conversationsService.create({
+          const newConversation = await this.conversationsService.create({
             waPhoneNumber: from,
             teamsThreadId: result.id,
             waCustomerName: name,
           });
           console.log('✅ Nuevo hilo registrado en BD y Teams');
+
+          // Guardar el mensaje en la base de datos
+          try {
+            await this.messagesService.saveMessage({
+              conversationId: newConversation.id,
+              content: text,
+              source: 'whatsapp',
+              waMessageId: message.id,
+              senderName: name,
+            });
+          } catch (msgError: any) {
+            console.warn(
+              `⚠️ Error guardando mensaje en BD: ${msgError?.message}`,
+            );
+          }
         }
       } catch (error: any) {
         console.error('❌ Error en la orquestación:', error.message);

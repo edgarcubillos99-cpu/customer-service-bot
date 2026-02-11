@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { Conversation } from './common/entities/conversation.entity';
+import { Message } from './common/entities/message.entity';
 import { TeamsModule } from './teams/teams.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { AppController } from './app.controller';
@@ -15,7 +16,7 @@ import configuration from './config/configuration';
     TypeOrmModule.forRoot({
       type: 'sqlite',
       database: 'database.sqlite',
-      entities: [Conversation],
+      entities: [Conversation, Message],
       synchronize: true, // Crea las tablas automáticamente (solo para desarrollo)
     }),
     TeamsModule,

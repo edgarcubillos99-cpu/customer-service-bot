@@ -3,6 +3,7 @@
 import { IsObject, IsOptional, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
+// las clases son para definir las estructuras de los datos que se van a usar en la aplicación
 class TeamsMessageFrom {
   application?: {
     displayName?: string;

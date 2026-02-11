@@ -6,11 +6,13 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { Conversation } from '../common/entities/conversation.entity';
 import { HttpModule } from '@nestjs/axios';
 import { TeamsModule } from '../teams/teams.module';
+import { MessagesModule } from '../messages/messages.module';
 
 @Module({
   imports: [
     HttpModule,
     forwardRef(() => TeamsModule),
+    MessagesModule,
     // Registramos la entidad para que TypeORM la reconozca
     TypeOrmModule.forFeature([Conversation]),
   ],
