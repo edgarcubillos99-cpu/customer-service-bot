@@ -6,10 +6,13 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
 
 @Entity('messages')
+@Index(['waMessageId'], { unique: true })
+@Index(['teamsMessageId'], { unique: true })
 export class Message {
   @PrimaryGeneratedColumn()
   id: number;

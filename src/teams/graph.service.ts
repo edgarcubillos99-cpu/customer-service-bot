@@ -101,22 +101,6 @@ export class GraphService {
         title: `📱 Nuevo mensaje de WhatsApp - ${userName}`,
         sections: [
           {
-            activityTitle: `Usuario: ${userName}`,
-            activitySubtitle: `Teléfono: ${userPhone}`,
-            facts: [
-              {
-                name: 'Usuario:',
-                value: userName,
-              },
-              {
-                name: 'Teléfono:',
-                value: userPhone,
-              },
-              {
-                name: 'Mensaje:',
-                value: content,
-              },
-            ],
             text: `Usuario: ${userName}\nTeléfono: ${userPhone}\n\nMensaje:\n${content}`,
             markdown: true,
           },

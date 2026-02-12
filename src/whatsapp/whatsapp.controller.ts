@@ -55,6 +55,18 @@ export class WhatsappController {
       const name = value.contacts?.[0]?.profile?.name || 'Usuario';
 
       try {
+        // 0. Verificar si este mensaje ya fue procesado (prevenir duplicados)
+        if (message.id) {
+          const alreadyProcessed =
+            await this.messagesService.messageExistsByWaId(message.id);
+          if (alreadyProcessed) {
+            console.log(
+              `⏭️ Mensaje de WhatsApp duplicado ignorado: ${message.id}`,
+            );
+            return { status: 'DUPLICATE_IGNORED' };
+          }
+        }
+
         // 1. Verificar si ya existe una conversación abierta para este número
         const conversation = await this.conversationsService.findByPhone(from);
 
@@ -64,28 +76,25 @@ export class WhatsappController {
             `🧵 Añadiendo mensaje al hilo existente: ${conversation.teamsThreadId}`,
           );
 
-          // Guardar el mensaje en la base de datos
-          try {
-            await this.messagesService.saveMessage({
-              conversationId: conversation.id,
-              content: text,
-              source: 'whatsapp',
-              waMessageId: message.id,
-              senderName: name,
-            });
-          } catch (msgError: any) {
-            console.warn(
-              `⚠️ Error guardando mensaje en BD: ${msgError?.message}`,
-            );
-          }
+          // Guardar el mensaje en la base de datos (verifica duplicados internamente)
+          const savedMessage = await this.messagesService.saveMessage({
+            conversationId: conversation.id,
+            content: text,
+            source: 'whatsapp',
+            waMessageId: message.id,
+            senderName: name,
+          });
 
-          await this.graphService.replyToThread(
-            conversation.teamsThreadId,
-            text,
-            name,
-            from,
-          );
-          console.log('✅ Mensaje añadido al hilo de Teams');
+          // Solo enviar a Teams si el mensaje no era duplicado
+          if (savedMessage) {
+            await this.graphService.replyToThread(
+              conversation.teamsThreadId,
+              text,
+              name,
+              from,
+            );
+            console.log('✅ Mensaje añadido al hilo de Teams');
+          }
         } else {
           // 3. Si no existe, creamos un nuevo hilo principal en Teams
           console.log(`🆕 Creando nuevo hilo para: ${from}`);
@@ -103,20 +112,14 @@ export class WhatsappController {
           });
           console.log('✅ Nuevo hilo registrado en BD y Teams');
 
-          // Guardar el mensaje en la base de datos
-          try {
-            await this.messagesService.saveMessage({
-              conversationId: newConversation.id,
-              content: text,
-              source: 'whatsapp',
-              waMessageId: message.id,
-              senderName: name,
-            });
-          } catch (msgError: any) {
-            console.warn(
-              `⚠️ Error guardando mensaje en BD: ${msgError?.message}`,
-            );
-          }
+          // Guardar el mensaje en la base de datos (verifica duplicados internamente)
+          await this.messagesService.saveMessage({
+            conversationId: newConversation.id,
+            content: text,
+            source: 'whatsapp',
+            waMessageId: message.id,
+            senderName: name,
+          });
         }
       } catch (error: any) {
         console.error('❌ Error en la orquestación:', error.message);

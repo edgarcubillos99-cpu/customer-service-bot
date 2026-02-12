@@ -114,13 +114,28 @@ export class TeamsService implements OnModuleInit {
       return;
     }
 
-    // Verificar si el mensaje ya fue procesado (deduplicación)
+    // Verificar si el mensaje ya fue procesado (deduplicación en memoria)
     if (this.isMessageProcessed(message.id)) {
-      console.log(`⏭️ Mensaje duplicado ignorado: ${message.id}`);
+      console.log(`⏭️ Mensaje duplicado ignorado (cache): ${message.id}`);
       return;
     }
 
-    // Marcar como procesado antes de continuar
+    // Verificar si el mensaje ya fue procesado en la base de datos
+    // Esto es más confiable que el cache en memoria y funciona entre reinicios
+    if (message.id) {
+      const alreadyProcessed =
+        await this.messagesService.messageExistsByTeamsId(message.id);
+      if (alreadyProcessed) {
+        console.log(
+          `⏭️ Mensaje de Teams duplicado ignorado (BD): ${message.id}`,
+        );
+        // También marcarlo en cache para evitar consultas futuras
+        this.markMessageAsProcessed(message.id);
+        return;
+      }
+    }
+
+    // Marcar como procesado antes de continuar (tanto en cache como en BD)
     this.markMessageAsProcessed(message.id);
 
     // Evitar que el bot se responda a sí mismo
@@ -304,31 +319,32 @@ export class TeamsService implements OnModuleInit {
     if (conversation) {
       try {
         // Guardar el mensaje en la base de datos antes de enviarlo
-        try {
-          await this.messagesService.saveMessage({
-            conversationId: conversation.id,
-            content: text,
-            source: 'teams',
-            teamsMessageId: message.id,
-            senderName:
-              message.from?.user?.displayName ||
-              message.from?.application?.displayName ||
-              'Desconocido',
-          });
-        } catch (msgError: any) {
-          // No fallar si hay error guardando el mensaje, solo loguear
-          console.warn(
-            `⚠️ Error guardando mensaje en BD: ${msgError?.message}`,
+        // saveMessage verifica duplicados internamente y retorna null si es duplicado
+        const savedMessage = await this.messagesService.saveMessage({
+          conversationId: conversation.id,
+          content: text,
+          source: 'teams',
+          teamsMessageId: message.id,
+          senderName:
+            message.from?.user?.displayName ||
+            message.from?.application?.displayName ||
+            'Desconocido',
+        });
+
+        // Solo enviar a WhatsApp si el mensaje no era duplicado
+        if (savedMessage) {
+          await this.whatsappService.sendMessage(
+            conversation.waPhoneNumber,
+            text,
+          );
+          console.log(
+            `✅ Mensaje enviado a WhatsApp: ${conversation.waPhoneNumber}`,
+          );
+        } else {
+          console.log(
+            `⏭️ Mensaje duplicado no enviado a WhatsApp: ${conversation.waPhoneNumber}`,
           );
         }
-
-        await this.whatsappService.sendMessage(
-          conversation.waPhoneNumber,
-          text,
-        );
-        console.log(
-          `✅ Mensaje enviado a WhatsApp: ${conversation.waPhoneNumber}`,
-        );
       } catch (error: any) {
         console.error(
           `❌ Error enviando a WhatsApp (${conversation.waPhoneNumber}):`,
@@ -431,3 +447,4 @@ export class TeamsService implements OnModuleInit {
     }
   }
 }
+
