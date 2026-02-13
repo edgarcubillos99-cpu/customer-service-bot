@@ -6,9 +6,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
-import { lastValueFrom } from 'rxjs';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { ClientSecretCredential } from '@azure/identity';
+// UsernamePasswordCredential está deprecado pero es necesario para permisos delegados
+import { UsernamePasswordCredential } from '@azure/identity';
 import { TokenCredentialAuthenticationProvider } from '@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials';
 
 @Injectable()
@@ -21,31 +22,41 @@ export class GraphService {
     private configService: ConfigService,
     private httpService: HttpService,
   ) {
-    // Configurar Webhook URL (método preferido para enviar mensajes)
     this.webhookUrl = this.configService.get<string>('teamsWebhookUrl');
-
-    if (this.webhookUrl) {
-      console.log(
-        '✅ GraphService: Webhook URL configurado (método preferido)',
-      );
-    } else {
-      console.log(
-        '⚠️ GraphService: TEAMS_WEBHOOK_URL no configurado. Intentando usar Graph API...',
-      );
-    }
-
+    this.initializeGraphClient();
+  }
+  private initializeGraphClient() {
     // Configurar Graph API solo si es necesario (para leer mensajes)
     try {
       const tenantId = this.configService.get<string>('teamsTenantId');
       const clientId = this.configService.get<string>('teamsClientId');
       const clientSecret = this.configService.get<string>('teamsClientSecret');
 
-      if (tenantId && clientId && clientSecret) {
-        console.log('🔐 GraphService: Configurando credenciales de Azure...', {
-          tenantId: tenantId.substring(0, 8) + '...',
-          clientId: clientId.substring(0, 8) + '...',
-          clientSecretPresent: !!clientSecret,
-        });
+      // Credenciales del bot de Teams
+      const botEmail = this.configService.get<string>('teamsBotEmail');
+      const botPassword = this.configService.get<string>('teamsBotPassword');
+
+      let credential;
+
+      if (tenantId && clientId && botEmail && botPassword) {
+        console.log(
+          '🔐 GraphService: Configurando credenciales Azure de ${botEmail}',
+        );
+
+        // UsernamePasswordCredential está deprecado pero es necesario para permisos delegados
+        // Se mantiene intencionalmente para autenticación con permisos delegados
+        credential = new UsernamePasswordCredential(
+          botEmail,
+          botPassword,
+          tenantId,
+          clientId,
+        );
+      } else if (tenantId && clientId && clientSecret) {
+        // OPCIÓN B: Autenticación de Aplicación (Solo lectura o Migración)
+        // ❌ Esto fallará al intentar enviar mensajes normales
+        console.warn(
+          '⚠️ GraphService: Usando Client Secret (App Context). El envío de mensajes fallará.',
+        );
 
         // 1. Credenciales de Azure
         this.credential = new ClientSecretCredential(
@@ -53,16 +64,19 @@ export class GraphService {
           clientId,
           clientSecret,
         );
+        credential = this.credential;
+      }
 
-        // 2. Proveedor de Autenticación oficial
+      if (credential) {
+        // Proveedor de Autenticación oficial
         const authProvider = new TokenCredentialAuthenticationProvider(
-          this.credential,
+          credential,
           {
             scopes: ['https://graph.microsoft.com/.default'],
           },
         );
 
-        // 3. Inicialización del cliente
+        // Inicialización del cliente
         this.graphClient = Client.initWithMiddleware({
           authProvider: authProvider,
         });
@@ -75,8 +89,38 @@ export class GraphService {
       }
     } catch (error) {
       console.error('❌ GraphService: Error configurando Graph API:', error);
-      // No lanzar error, ya que podemos usar webhooks
     }
+  }
+
+  async sendMessageToChannel(
+    userName: string,
+    userPhone: string,
+    content: string,
+  ) {
+    // Si tenemos cliente de Graph configurado como Usuario, lo usamos (soporta hilos)
+    if (this.graphClient) {
+      const teamId = this.configService.get<string>('teamsTeamId');
+      const channelId = this.configService.get<string>('teamsChannelId');
+
+      const message = {
+        body: {
+          contentType: 'html',
+          content: `<b>Usuario:</b> ${userName}<br><b>Teléfono:</b> ${userPhone}<br><br>${content}`,
+        },
+      };
+
+      // Enviamos mensaje raíz al canal
+      const result = await this.graphClient
+        .api(`/teams/${teamId}/channels/${channelId}/messages`)
+        .post(message);
+
+      console.log('✅ Mensaje raíz enviado vía Graph API. ID:', result.id);
+      return { id: result.id }; // Retorna el ID REAL de Teams
+    }
+
+    throw new Error(
+      'TEAMS_WEBHOOK_URL no configurado. Por favor configura un Incoming Webhook en Teams.',
+    );
   }
 
   async replyToThread(
@@ -85,52 +129,16 @@ export class GraphService {
     userName: string,
     userPhone: string,
   ) {
-    // Los webhooks no soportan respuestas directas a hilos
-    // En su lugar, enviamos el mensaje con contexto del hilo
-    if (this.webhookUrl) {
-      console.log(
-        `📤 Enviando respuesta a hilo ${threadId} vía Webhook (los webhooks no soportan hilos directamente)`,
+    // Verificar si intentamos responder a un ID falso de webhook
+    if (threadId.startsWith('webhook_')) {
+      console.warn(
+        '⚠️ Intentando responder a un ID de Webhook. Se enviará como mensaje nuevo.',
       );
-      // Enviar como mensaje nuevo con referencia al hilo en el contenido
-      // Usar el mismo formato que sendMessageToChannel para mantener consistencia
-      const message = {
-        '@type': 'MessageCard',
-        '@context': 'https://schema.org/extensions',
-        summary: `Nuevo mensaje de WhatsApp de ${userName} - Teléfono: ${userPhone}`,
-        themeColor: '25D366',
-        title: `📱 Nuevo mensaje de WhatsApp - ${userName}`,
-        sections: [
-          {
-            text: `Usuario: ${userName}\nTeléfono: ${userPhone}\n\nMensaje:\n${content}`,
-            markdown: true,
-          },
-        ],
-      };
-
-      try {
-        await lastValueFrom(
-          this.httpService.post(this.webhookUrl, message, {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          }),
-        );
-        console.log('✅ Respuesta enviada a Teams vía Webhook');
-        return { id: `reply_${Date.now()}` };
-      } catch (error: any) {
-        console.error(
-          '❌ Error enviando respuesta vía Webhook:',
-          error?.message,
-        );
-        throw error;
-      }
+      return this.sendMessageToChannel(userName, userPhone, content);
     }
 
-    // Fallback a Graph API (requiere permisos delegados)
     if (!this.graphClient) {
-      throw new Error(
-        'Graph API no configurado y webhook no disponible para responder a hilos',
-      );
+      throw new Error('Graph API requerida para responder hilos.');
     }
 
     const teamId = this.configService.get<string>('teamsTeamId');
@@ -139,107 +147,18 @@ export class GraphService {
     const reply = {
       body: {
         contentType: 'html',
-        content: content,
+        content: `${content}`, // El contenido de la respuesta
       },
     };
 
-    // Esta ruta permite responder a un mensaje específico creando un hilo
-    return await this.graphClient
+    // Endpoint específico para replies
+    await this.graphClient
       .api(
         `/teams/${teamId}/channels/${channelId}/messages/${threadId}/replies`,
       )
       .post(reply);
-  }
 
-  async sendMessageToChannel(
-    userName: string,
-    userPhone: string,
-    content: string,
-  ) {
-    // Priorizar webhook si está configurado (método más simple y confiable)
-    if (this.webhookUrl) {
-      return await this.sendMessageViaWebhook(userName, userPhone, content);
-    }
-
-    // Fallback a Graph API (requiere permisos delegados, no funciona con app-only)
-    console.log(
-      '⚠️ Webhook no configurado, intentando usar Graph API (puede fallar con app-only auth)',
-    );
-    throw new Error(
-      'TEAMS_WEBHOOK_URL no configurado. Por favor configura un Incoming Webhook en Teams.',
-    );
-  }
-
-  /**
-   * Envía un mensaje a Teams usando Incoming Webhook (método recomendado)
-   */
-  private async sendMessageViaWebhook(
-    userName: string,
-    userPhone: string,
-    content: string,
-  ) {
-    if (!this.webhookUrl) {
-      throw new Error('TEAMS_WEBHOOK_URL no está configurado');
-    }
-
-    // Formato de mensaje para Teams Webhook (soporta HTML básico)
-    // Incluimos el número de teléfono en el text también para poder extraerlo después
-    const message = {
-      '@type': 'MessageCard',
-      '@context': 'https://schema.org/extensions',
-      summary: `Nuevo mensaje de WhatsApp de ${userName} - Teléfono: ${userPhone}`,
-      themeColor: '25D366',
-      title: `📱 Nuevo mensaje de WhatsApp - ${userName}`,
-      sections: [
-        {
-          activityTitle: `Usuario: ${userName}`,
-          activitySubtitle: `Teléfono: ${userPhone}`,
-          facts: [
-            {
-              name: 'Usuario:',
-              value: userName,
-            },
-            {
-              name: 'Teléfono:',
-              value: userPhone,
-            },
-            {
-              name: 'Mensaje:',
-              value: content,
-            },
-          ],
-          text: `Usuario: ${userName}\nTeléfono: ${userPhone}\n\nMensaje:\n${content}`,
-          markdown: true,
-        },
-      ],
-    };
-
-    try {
-      console.log('📤 Enviando mensaje a Teams vía Webhook...');
-      await lastValueFrom(
-        this.httpService.post(this.webhookUrl, message, {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      // Los webhooks de Teams no retornan un ID de mensaje, así que generamos uno
-      // basado en timestamp y phone number para tracking
-      const messageId = `webhook_${Date.now()}_${userPhone.replace(/\D/g, '')}`;
-
-      console.log('✅ Mensaje enviado exitosamente a Teams vía Webhook');
-      return { id: messageId };
-    } catch (error: any) {
-      console.error('❌ Error enviando mensaje vía Webhook:', {
-        message: error?.message,
-        status: error?.response?.status,
-        data: error?.response?.data,
-      });
-      throw new Error(
-        `Error enviando mensaje a Teams: ${error?.message || 'Error desconocido'}`,
-      );
-    }
+    console.log(`✅ Respuesta enviada al hilo ${threadId}`);
   }
 
   /**

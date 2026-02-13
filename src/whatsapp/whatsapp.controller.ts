@@ -15,6 +15,7 @@ import type { Response } from 'express';
 import { GraphService } from '../teams/graph.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
+import { WhatsappService } from './whatsapp.service';
 
 @Controller('whatsapp/webhook')
 export class WhatsappController {
@@ -23,6 +24,7 @@ export class WhatsappController {
     private readonly conversationsService: ConversationsService,
     private readonly messagesService: MessagesService,
     private readonly configService: ConfigService,
+    private readonly whatsappService: WhatsappService,
   ) {}
 
   @Get()
@@ -43,7 +45,7 @@ export class WhatsappController {
   }
 
   @Post()
-  async receiveMessage(@Body() body: any) {
+  async receiveMessage(@Body() body: any, @Res() res: Response) {
     const entry = body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
@@ -52,80 +54,16 @@ export class WhatsappController {
     if (message && message.type === 'text') {
       const from = message.from; // Número de WhatsApp del cliente
       const text = message.text.body; // Mensaje del cliente
-      const name = value.contacts?.[0]?.profile?.name || 'Usuario';
+      const name = value.contacts?.[0]?.profile?.name || from;
 
-      try {
-        // 0. Verificar si este mensaje ya fue procesado (prevenir duplicados)
-        if (message.id) {
-          const alreadyProcessed =
-            await this.messagesService.messageExistsByWaId(message.id);
-          if (alreadyProcessed) {
-            console.log(
-              `⏭️ Mensaje de WhatsApp duplicado ignorado: ${message.id}`,
-            );
-            return { status: 'DUPLICATE_IGNORED' };
-          }
-        }
-
-        // 1. Verificar si ya existe una conversación abierta para este número
-        const conversation = await this.conversationsService.findByPhone(from);
-
-        if (conversation) {
-          // 2. Si existe, respondemos al hilo existente en Teams
-          console.log(
-            `🧵 Añadiendo mensaje al hilo existente: ${conversation.teamsThreadId}`,
-          );
-
-          // Guardar el mensaje en la base de datos (verifica duplicados internamente)
-          const savedMessage = await this.messagesService.saveMessage({
-            conversationId: conversation.id,
-            content: text,
-            source: 'whatsapp',
-            waMessageId: message.id,
-            senderName: name,
-          });
-
-          // Solo enviar a Teams si el mensaje no era duplicado
-          if (savedMessage) {
-            await this.graphService.replyToThread(
-              conversation.teamsThreadId,
-              text,
-              name,
-              from,
-            );
-            console.log('✅ Mensaje añadido al hilo de Teams');
-          }
-        } else {
-          // 3. Si no existe, creamos un nuevo hilo principal en Teams
-          console.log(`🆕 Creando nuevo hilo para: ${from}`);
-          const result = await this.graphService.sendMessageToChannel(
-            name,
-            from,
-            text,
-          );
-
-          // 4. Guardamos el ID del mensaje de Teams como el ID del hilo para futuras respuestas
-          const newConversation = await this.conversationsService.create({
-            waPhoneNumber: from,
-            teamsThreadId: result.id,
-            waCustomerName: name,
-          });
-          console.log('✅ Nuevo hilo registrado en BD y Teams');
-
-          // Guardar el mensaje en la base de datos (verifica duplicados internamente)
-          await this.messagesService.saveMessage({
-            conversationId: newConversation.id,
-            content: text,
-            source: 'whatsapp',
-            waMessageId: message.id,
-            senderName: name,
-          });
-        }
-      } catch (error: any) {
-        console.error('❌ Error en la orquestación:', error.message);
-      }
+      // Delegamos TODO al servicio
+      await this.whatsappService.handleIncomingMessage(
+        from,
+        name,
+        text,
+        message.id,
+      );
     }
-
-    return { status: 'RECEIVED' };
+    return res.status(HttpStatus.OK).send('Mensaje recibido correctamente');
   }
 }

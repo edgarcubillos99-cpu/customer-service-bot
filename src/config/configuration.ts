@@ -11,4 +11,6 @@ export default () => ({
   teamsChannelId: process.env.TEAMS_CHANNEL_ID,
   teamsWebhookUrl: process.env.TEAMS_WEBHOOK_URL,
   publicUrl: process.env.PUBLIC_URL || process.env.TEAMS_PUBLIC_URL,
+  teamsBotEmail: process.env.TEAMS_BOT_EMAIL,
+  teamsBotPassword: process.env.TEAMS_BOT_PASSWORD,
 });

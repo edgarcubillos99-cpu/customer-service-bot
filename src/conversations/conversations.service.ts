@@ -52,4 +52,9 @@ export class ConversationsService {
   async updateThreadId(id: number, teamsThreadId: string) {
     await this.conversationRepository.update(id, { teamsThreadId });
   }
+
+  // Actualiza campos de una conversación
+  async update(id: number, data: Partial<Conversation>) {
+    await this.conversationRepository.update(id, data);
+  }
 }
