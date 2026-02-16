@@ -39,7 +39,7 @@ export class GraphService implements OnModuleInit {
     const credentialsFactory = new ConfigurationServiceClientCredentialFactory({
       MicrosoftAppId: appId,
       MicrosoftAppPassword: appPassword,
-      MicrosoftAppType: 'MultiTenant',
+      MicrosoftAppType: 'SingleTenant',
       MicrosoftAppTenantId: tenantId,
     });
 
