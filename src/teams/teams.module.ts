@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
 import { GraphService } from './graph.service';
+import { TeamsBotHandler } from './teams-bot.handler'; // <--- Nuevo
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { MessagesModule } from '../messages/messages.module';
 import { ConfigModule } from '@nestjs/config';
@@ -15,11 +16,14 @@ import { Conversation } from '../common/entities/conversation.entity';
     MessagesModule,
     ConfigModule,
     HttpModule,
-    // Necesario para ConversationsService
     TypeOrmModule.forFeature([Conversation]),
   ],
   controllers: [TeamsController],
-  providers: [TeamsService, GraphService],
-  exports: [GraphService],
+  providers: [
+    TeamsService, 
+    GraphService, 
+    TeamsBotHandler // <--- Importante registrarlo
+  ],
+  exports: [GraphService, TeamsService],
 })
 export class TeamsModule {}

@@ -13,4 +13,5 @@ export default () => ({
   publicUrl: process.env.PUBLIC_URL || process.env.TEAMS_PUBLIC_URL,
   teamsBotEmail: process.env.TEAMS_BOT_EMAIL,
   teamsBotPassword: process.env.TEAMS_BOT_PASSWORD,
+  microsoftAppId: process.env.MICROSOFT_APP_ID,
 });
