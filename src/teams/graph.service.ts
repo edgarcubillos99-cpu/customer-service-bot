@@ -1,6 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -114,6 +112,60 @@ export class GraphService implements OnModuleInit {
   }
 
   /**
+   * Crea un nuevo hilo en Teams con el contenido proporcionado
+   */
+  async createNewThread(
+    content: string,
+    attachmentUrl?: string,
+  ): Promise<string> {
+    const channelId = this.configService.get<string>('teamsChannelId');
+    const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
+    const serviceUrl = 'https://smba.trafficmanager.net/amer/';
+
+    // Si hay un attachment, agregarlo al contenido
+    let messageText = content;
+    if (attachmentUrl) {
+      messageText += `<br><a href="${attachmentUrl}">Ver adjunto</a>`;
+    }
+
+    const activity = {
+      type: 'message',
+      text: messageText,
+      textFormat: 'xml',
+    };
+
+    const conversationParameters = {
+      isGroup: true,
+      channelData: {
+        channel: { id: channelId },
+        tenant: { id: tenantId },
+      },
+      activity: activity,
+    } as ConversationParameters;
+
+    let newConversationId = '';
+
+    await this.adapter.createConversationAsync(
+      this.appId,
+      Channels.Msteams,
+      serviceUrl,
+      '',
+      conversationParameters,
+      async (context) => {
+        const ref = TurnContext.getConversationReference(context.activity);
+        if (ref.conversation && ref.conversation.id) {
+          newConversationId = ref.conversation.id;
+          console.log('✅ Hilo creado en Teams ID:', newConversationId);
+        } else {
+          console.error('❌ No se pudo obtener el ID de la conversación: ref.conversation es undefined.');
+        }
+      }
+    );
+
+    return newConversationId;
+  }
+
+  /**
    * Responde a un hilo existente
    */
   async replyToThread(threadId: string, content: string) {
@@ -121,7 +173,7 @@ export class GraphService implements OnModuleInit {
     
     const conversationReference = {
         conversation: { id: threadId },
-        serviceUrl: serviceUrl, 
+        serviceUrl: serviceUrl,
     };
 
     await this.adapter.continueConversationAsync(
