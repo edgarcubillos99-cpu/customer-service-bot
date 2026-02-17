@@ -9,8 +9,8 @@ import { lastValueFrom } from 'rxjs';
 import { AxiosResponse } from 'axios';
 import { WhatsappResponse } from '../common/whatsapp-response.interface';
 import { Observable } from 'rxjs';
-import { GraphService } from 'src/teams/graph.service';
 import { Conversation } from '../common/entities/conversation.entity';
+import { GraphService } from '../teams/graph.service';
 
 @Injectable()
 export class WhatsappService {
@@ -22,7 +22,7 @@ export class WhatsappService {
     private readonly configService: ConfigService,
     private readonly conversationsService: ConversationsService,
     private readonly messagesService: MessagesService,
-    private readonly graphService: GraphService,
+    private readonly botService: GraphService,
   ) {
     this.token = this.configService.get<string>('whatsappToken') ?? '';
     this.phoneId = this.configService.get<string>('whatsappPhoneId') ?? '';
@@ -37,45 +37,29 @@ export class WhatsappService {
     try {
       // 1. Buscamos si ya existe una conversación ACTIVA (estado OPEN)
       let conversation = await this.conversationsService.findByPhone(from);
-      let teamsMessageId: string;
+
+      // Variable para el contenido final a enviar a Teams
+      const finalContent = `<b>${name}:</b> ${text}`;
+      const attachmentUrl = undefined;
 
       if (conversation && conversation.teamsThreadId) {
-        // CASO A: Conversación EXISTENTE -> Responder al hilo
-        console.log(
-          `🔄 Retomando hilo existente para ${from}: ${conversation.teamsThreadId}`,
-        );
-
-        // Enviamos como "Reply" al hilo existente
-        await this.graphService.replyToThread(
+        // Responder a un hilo existente
+        await this.botService.replyToThread(
           conversation.teamsThreadId,
-          text,
-          name,
-          from,
+          finalContent,
         );
-
-        await this.conversationsService.update(conversation.id, {
-          updatedAt: new Date(),
-        });
-
-        // Mantenemos  el mismo ID de hilo para la respuesta
-        teamsMessageId = conversation.teamsThreadId;
       } else {
-        // CASO B: Conversación NUEVA -> Crear mensaje en el canal (Root Message)
-        console.log(`🆕 Creando nueva conversación para ${from}`);
-
-        // Esto usa Graph API para obtener un ID real, no un Webhook
-        const result = (await this.graphService.sendMessageToChannel(
-          name,
-          from,
-          text,
-        )) as { id: string };
-        teamsMessageId = result.id;
+        // Crear nuevo hilo
+        const teamsThreadId = await this.botService.createNewThread(
+          finalContent,
+          attachmentUrl,
+        );
 
         // Guardamos la nueva conversación
         conversation = (await this.conversationsService.create({
           waPhoneNumber: from,
           waCustomerName: name,
-          teamsThreadId: teamsMessageId,
+          teamsThreadId: teamsThreadId,
         })) as Conversation;
       }
 
@@ -93,6 +77,17 @@ export class WhatsappService {
       });
     } catch (error) {
       console.error('❌ Error manejando mensaje de WhatsApp:', error);
+    }
+  }
+
+  // Método nuevo para que TeamsHandler lo llame
+  async sendMessageToWhatsappByThreadId(threadId: string, text: string) {
+    const conversation =
+      await this.conversationsService.findByThreadId(threadId); // Necesitas crear este método
+    if (conversation) {
+      await this.sendMessage(conversation.waPhoneNumber, text);
+    } else {
+      console.error('No se encontró conversación para el hilo', threadId);
     }
   }
 
