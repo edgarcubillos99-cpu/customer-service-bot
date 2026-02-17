@@ -8,11 +8,12 @@ import {
   TurnContext,
   ConversationParameters,
   Channels,
+  Activity, // <--- Importante importar esto para los tipos
 } from 'botbuilder';
 
 @Injectable()
 export class GraphService implements OnModuleInit {
-  public adapter: CloudAdapter; // Público para que el Controller lo use
+  public adapter: CloudAdapter;
   private appId: string;
 
   constructor(private configService: ConfigService) {}
@@ -22,7 +23,6 @@ export class GraphService implements OnModuleInit {
   }
 
   private initializeBotAdapter() {
-    // Asegúrate de tener estas variables en tu .env
     const appId = this.configService.get<string>('MICROSOFT_APP_ID');
     const appPassword = this.configService.get<string>('MICROSOFT_APP_PASSWORD');
     const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
@@ -48,7 +48,6 @@ export class GraphService implements OnModuleInit {
 
     this.adapter = new CloudAdapter(botFrameworkAuthentication);
     
-    // Manejo de errores global del adaptador
     this.adapter.onTurnError = async (context, error) => {
       console.error(`\n [onTurnError] unhandled error: ${error}`);
       await context.sendTraceActivity(
@@ -63,7 +62,8 @@ export class GraphService implements OnModuleInit {
   }
 
   /**
-   * Crea un nuevo hilo (conversación) en el canal de Teams
+   * Crea un nuevo hilo en Teams con un "Ticket" de cabecera
+   * y envía el mensaje del usuario como primera respuesta.
    */
   async sendMessageToChannel(
     userName: string,
@@ -74,9 +74,10 @@ export class GraphService implements OnModuleInit {
     const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
     const serviceUrl = 'https://smba.trafficmanager.net/amer/';
 
-    const activity = {
+    // 1. DISEÑO DEL ENCABEZADO
+    const rootActivity = {
       type: 'message',
-      text: `<b>Usuario:</b> ${userName}<br><b>Teléfono:</b> ${userPhone}<br><br>${content}`,
+      text: `👤 <b>Cliente:</b> ${userName}<br>📱 <b>WhatsApp:</b> +${userPhone}<br>🟢 <b>Estado:</b> Nuevo Chat`,
       textFormat: 'xml',
     };
 
@@ -86,88 +87,55 @@ export class GraphService implements OnModuleInit {
         channel: { id: channelId },
         tenant: { id: tenantId },
       },
-      activity: activity,
+      activity: rootActivity,
     } as ConversationParameters;
 
     let newConversationId = '';
 
+    // 2. CREAR EL HILO
     await this.adapter.createConversationAsync(
       this.appId,
       Channels.Msteams,
       serviceUrl,
-      '', // Cambiado null a cadena vacía para cumplir con el tipo 'string'
+      '', // Usar null en lugar de '' es más seguro para el audience
       conversationParameters,
       async (context) => {
         const ref = TurnContext.getConversationReference(context.activity);
-        if (ref.conversation && ref.conversation.id) {
-          newConversationId = ref.conversation.id;
-          console.log('✅ Hilo creado en Teams ID:', newConversationId);
-        } else {
-          console.error('❌ No se pudo obtener el ID de la conversación: ref.conversation es undefined.');
-        }
-      }
+        
+        // CORRECCIÓN 1: Usar ?. (optional chaining) y fallback para evitar error de undefined
+        newConversationId = ref.conversation?.id || ''; 
+        console.log('✅ Hilo creado. ID:', newConversationId);
+
+        // 3. ENVIAR EL CONTENIDO REAL
+        await this.replyToThreadInternal(context, content);
+      },
     );
 
     return { id: newConversationId };
   }
 
   /**
-   * Crea un nuevo hilo en Teams con el contenido proporcionado
+   * Helper interno para responder inmediatamente.
+   * CORRECCIÓN 2: Ya no recibimos threadId, usamos el context directo.
    */
-  async createNewThread(
-    content: string,
-    attachmentUrl?: string,
-  ): Promise<string> {
-    const channelId = this.configService.get<string>('teamsChannelId');
-    const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
-    const serviceUrl = 'https://smba.trafficmanager.net/amer/';
+  private async replyToThreadInternal(context: TurnContext, content: string) {
+      // Pequeña pausa estética
+      await new Promise(r => setTimeout(r, 500)); 
 
-    // Si hay un attachment, agregarlo al contenido
-    let messageText = content;
-    if (attachmentUrl) {
-      messageText += `<br><a href="${attachmentUrl}">Ver adjunto</a>`;
-    }
-
-    const activity = {
-      type: 'message',
-      text: messageText,
-      textFormat: 'xml',
-    };
-
-    const conversationParameters = {
-      isGroup: true,
-      channelData: {
-        channel: { id: channelId },
-        tenant: { id: tenantId },
-      },
-      activity: activity,
-    } as ConversationParameters;
-
-    let newConversationId = '';
-
-    await this.adapter.createConversationAsync(
-      this.appId,
-      Channels.Msteams,
-      serviceUrl,
-      '',
-      conversationParameters,
-      async (context) => {
-        const ref = TurnContext.getConversationReference(context.activity);
-        if (ref.conversation && ref.conversation.id) {
-          newConversationId = ref.conversation.id;
-          console.log('✅ Hilo creado en Teams ID:', newConversationId);
-        } else {
-          console.error('❌ No se pudo obtener el ID de la conversación: ref.conversation es undefined.');
-        }
-      }
-    );
-
-    return newConversationId;
+      // CORRECCIÓN 2: Definimos el tipo Partial<Activity> y quitamos 'conversation'
+      // Al usar context.sendActivity, el bot ya sabe que debe responder en ESTE hilo.
+      const replyActivity: Partial<Activity> = {
+          type: 'message',
+          text: content,
+          textFormat: 'xml',
+      };
+      
+      await context.sendActivity(replyActivity);
   }
 
-  /**
-   * Responde a un hilo existente
-   */
+  // ... (El resto de métodos createNewThread y replyToThread los puedes dejar igual
+  // o borrarlos si ya no los usas, pero aquí te dejo replyToThread corregido por si acaso)
+
   async replyToThread(threadId: string, content: string) {
     const serviceUrl = 'https://smba.trafficmanager.net/amer/';
     
@@ -183,7 +151,7 @@ export class GraphService implements OnModuleInit {
             await context.sendActivity({
                 type: 'message',
                 text: content,
-                textFormat: 'xml' // Permite usar negritas o saltos de línea simples
+                textFormat: 'xml'
             });
             console.log(`✅ Respuesta enviada al hilo ${threadId}`);
         }

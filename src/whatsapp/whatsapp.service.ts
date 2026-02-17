@@ -50,16 +50,17 @@ export class WhatsappService {
         );
       } else {
         // Crear nuevo hilo
-        const teamsThreadId = await this.botService.createNewThread(
-          finalContent,
-          attachmentUrl,
+        const result = await this.botService.sendMessageToChannel(
+          name,         // Nombre del cliente
+          from,         // Número de teléfono
+          text          // El mensaje "Hola hola"
         );
 
         // Guardamos la nueva conversación
         conversation = (await this.conversationsService.create({
           waPhoneNumber: from,
           waCustomerName: name,
-          teamsThreadId: teamsThreadId,
+          teamsThreadId: result.id,
         })) as Conversation;
       }
 
