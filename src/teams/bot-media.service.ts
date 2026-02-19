@@ -33,7 +33,6 @@ export class BotMediaService {
 
     try {
       // 1. Obtener el token de autenticación del Connector de Bot Framework
-      // Corrección: BotAdapter base no tiene 'createConnectorClient', así que usar TurnContext nativamente.
       // TurnContext proporciona connectorClient si está usando BotFrameworkAdapter
       const connectorClient = (turnContext as any).adapter?.connectorClient 
         || (turnContext as any).adapter?.getOrCreateConnectorClient?.(activity.serviceUrl);

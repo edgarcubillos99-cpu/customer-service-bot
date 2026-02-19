@@ -78,10 +78,8 @@ export class GraphService implements OnModuleInit {
       };
     }
 
-
     // 2. Si es PDF, requiere URL pública.
     // Asumimos que guardaste el Buffer en MongoDB y este endpoint lo devuelve.
-    // En desarrollo, 'tu-dominio' será tu URL de ngrok.
     if (mimetype.startsWith('application/pdf') || mimetype.startsWith('application/')) {
       const publicDomain = this.configService.get<string>('PUBLIC_APP_URL'); // ej: https://tu-ngrok.app
       const downloadUrl = `${publicDomain}/media/download/${messageId}`; 
@@ -136,7 +134,7 @@ export class GraphService implements OnModuleInit {
       this.appId,
       Channels.Msteams,
       serviceUrl,
-      '', // Usar null en lugar de '' es más seguro para el audience
+      '',
       conversationParameters,
       async (context) => {
         const ref = TurnContext.getConversationReference(context.activity);
@@ -193,9 +191,7 @@ export class GraphService implements OnModuleInit {
       await context.sendActivity(replyActivity);
   }
 
-  // ... (El resto de métodos createNewThread y replyToThread los puedes dejar igual
-  // o borrarlos si ya no los usas, pero aquí te dejo replyToThread corregido por si acaso)
-
+  // Reply to a thread para enviar un mensaje y un adjunto
   async replyToThread(
     threadId: string,
     content: string,

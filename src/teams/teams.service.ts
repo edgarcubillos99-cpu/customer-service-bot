@@ -48,8 +48,7 @@ export class TeamsService {
     // Fallback: Si no encontramos por hilo, intentar buscar si el hilo cambió
     // (A veces Teams cambia IDs en migraciones, pero es raro en hilos nuevos)
     if (!conversation) {
-        // Aquí podrías intentar buscar por texto si contiene un teléfono, 
-        // similar a tu lógica anterior, pero es arriesgado.
+        // Aquí podría intentar buscar por texto si contiene un teléfono, 
         console.warn(`⚠️ Conversación no encontrada para el hilo ${threadId}`);
         return;
     }

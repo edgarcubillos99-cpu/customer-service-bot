@@ -12,7 +12,6 @@ export class TeamsController {
   /**
    * Endpoint ÚNICO para el Bot Framework.
    * Azure Bot Service enviará aquí todos los eventos (mensajes, miembros nuevos, etc.)
-   * Ya no hace falta validar tokens ni renovar suscripciones.
    */
   @Post('messages')
   async messages(@Req() req: any, @Res() res: any) {

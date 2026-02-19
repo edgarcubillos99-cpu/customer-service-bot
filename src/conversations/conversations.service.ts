@@ -43,7 +43,7 @@ export class ConversationsService {
     return await this.conversationRepository.save(newConversation);
   }
 
-  // Opcional: Cerrar el hilo para permitir que uno nuevo se cree después
+  // Cerrar el hilo para permitir que uno nuevo se cree después
   async closeConversation(id: number) {
     await this.conversationRepository.update(id, { status: 'CLOSED' });
   }

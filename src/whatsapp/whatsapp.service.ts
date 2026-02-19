@@ -50,7 +50,6 @@ export class WhatsappService {
         fileBuffer = await this.downloadMediaFromMeta(mediaId);
         if (fileBuffer) {
            console.log(`✅ Archivo descargado exitosamente: ${fileName || 'imagen'}`);
-           // Nota para Teams: Podrías añadir un indicador en el texto
            finalContent += `<br><i>(Archivo adjunto procesado)</i>`;
         }
       }

@@ -29,4 +29,13 @@ export class Conversation {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @Column({ nullable: true })
+  messageId: string; // ID del mensaje en Teams
+
+  @Column({ nullable: true })
+  mimetype: string; // Tipo de archivo
+
+  @Column({ nullable: true })
+  fileName: string; // Nombre del archivo
 }

@@ -15,7 +15,7 @@ export class TeamsBotHandler extends ActivityHandler {
     });
 
     this.onMembersAdded(async (context, next) => {
-        // Aquí podrías saludar si quisieras, por ahora lo ignoramos
+        // Aquí se podría saludar si  se quisiera, por ahora lo ignoramos
         await next();
     });
   }
