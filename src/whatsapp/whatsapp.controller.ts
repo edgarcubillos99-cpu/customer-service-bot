@@ -9,6 +9,7 @@ import {
   Body,
   Res,
   HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -51,19 +52,44 @@ export class WhatsappController {
     const value = changes?.value;
     const message = value?.messages?.[0];
 
-    if (message && message.type === 'text') {
+    if (message) {
       const from = message.from; // Número de WhatsApp del cliente
-      const text = message.text.body; // Mensaje del cliente
+      const messageId = message.id;
       const name = value.contacts?.[0]?.profile?.name || from;
 
-      // Delegamos TODO al servicio
-      await this.whatsappService.handleIncomingMessage(
-        from,
-        name,
-        text,
-        message.id,
-      );
+      let text = '';
+      let mediaId: string | undefined = undefined;
+      let mimetype: string | undefined = undefined;
+      let fileName: string | undefined = undefined;
+
+      // 1. Clasificamos el tipo de mensaje entrante
+      if (message.type === 'text') {
+        text = message.text.body;
+      } else if (message.type === 'image') {
+        mediaId = message.image.id;
+        mimetype = message.image.mimetype;
+        // Si el cliente envía la foto con un texto al pie, lo capturamos
+        text = message.image.caption || '📷 [Imagen enviada]'; 
+      } else if (message.type === 'document') {
+        mediaId = message.document.id;
+        mimetype = message.document.mimetype;
+        fileName = message.document.filename;
+        text = message.document.caption || `📄 [Documento: ${fileName}]`;
+      }
+
+      // 2. Si hay texto o un archivo, se lo pasamos al servicio
+      if (text || mediaId) {
+        await this.whatsappService.handleIncomingMessage(
+          from,
+          name,
+          text,
+          messageId,
+          mediaId ?? '',
+          mimetype ?? '',
+          fileName ?? ''
+        ).catch(error => console.error('❌ Error procesando mensaje de WhatsApp:', error));
+      }
     }
-    return res.status(HttpStatus.OK).send('Mensaje recibido correctamente');
+    return res.status(HttpStatus.OK).send('Mensaje procesado');
   }
 }

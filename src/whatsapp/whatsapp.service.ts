@@ -33,27 +33,46 @@ export class WhatsappService {
     name: string,
     text: string,
     messageId: string,
+    mediaId: string,
+    mimetype: string,
+    fileName: string,
   ) {
     try {
       // 1. Buscamos si ya existe una conversación ACTIVA (estado OPEN)
       let conversation = await this.conversationsService.findByPhone(from);
+      let finalContent = `<b>${name}:</b> ${text}`;
+      
+      // Variable para almacenar el archivo si existe
+      let fileBuffer: Buffer | undefined = undefined;
 
-      // Variable para el contenido final a enviar a Teams
-      const finalContent = `<b>${name}:</b> ${text}`;
-      const attachmentUrl = undefined;
+      // 2. Si viene un mediaId, descargamos el archivo de Meta
+      if (mediaId) {
+        fileBuffer = await this.downloadMediaFromMeta(mediaId);
+        if (fileBuffer) {
+           console.log(`✅ Archivo descargado exitosamente: ${fileName || 'imagen'}`);
+           // Nota para Teams: Podrías añadir un indicador en el texto
+           finalContent += `<br><i>(Archivo adjunto procesado)</i>`;
+        }
+      }
 
       if (conversation && conversation.teamsThreadId) {
         // Responder a un hilo existente
         await this.botService.replyToThread(
           conversation.teamsThreadId,
           finalContent,
+          fileBuffer,
+          mimetype,
+          fileName,
         );
       } else {
         // Crear nuevo hilo
         const result = await this.botService.sendMessageToChannel(
           name,         // Nombre del cliente
           from,         // Número de teléfono
-          text          // El mensaje "Hola hola"
+          text,         // El mensaje
+          fileBuffer,   // El archivo
+          mimetype,     // El tipo de archivo
+          fileName,     // El nombre del archivo
         );
 
         // Guardamos la nueva conversación
@@ -78,6 +97,34 @@ export class WhatsappService {
       });
     } catch (error) {
       console.error('❌ Error manejando mensaje de WhatsApp:', error);
+    }
+  }
+
+  // Método para descargar el archivo de Meta
+  private async downloadMediaFromMeta(mediaId: string): Promise<Buffer | undefined> {
+    try {
+      // Paso A: Obtener la URL temporal del archivo
+      const metaUrlResponse = await lastValueFrom(
+        this.http.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        })
+      );
+
+      const mediaUrl = metaUrlResponse.data.url;
+      if (!mediaUrl) throw new Error('Meta no devolvió una URL válida');
+
+      // Paso B: Descargar el binario usando la URL temporal y el token
+      const downloadResponse = await lastValueFrom(
+        this.http.get(mediaUrl, {
+          responseType: 'arraybuffer', // Fundamental para imágenes/PDFs
+          headers: { Authorization: `Bearer ${this.token}` },
+        })
+      );
+
+      return Buffer.from(downloadResponse.data);
+    } catch (error) {
+      console.error(`❌ Error descargando media ${mediaId} de Meta:`, error);
+      return undefined;
     }
   }
 
