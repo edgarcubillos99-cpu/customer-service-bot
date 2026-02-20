@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { TurnContext } from 'botbuilder';
+import { TurnContext, Attachment } from 'botbuilder';
 import { firstValueFrom } from 'rxjs';
+
+export interface DownloadedAttachment {
+  buffer: Buffer;
+  contentType: string;
+  name: string;
+}
 
 @Injectable()
 export class BotMediaService {
@@ -10,61 +16,113 @@ export class BotMediaService {
   constructor(private readonly httpService: HttpService) {}
 
   /**
-   * Descarga un archivo adjunto desde Microsoft Teams.
-   * @param turnContext El contexto actual de la conversación.
-   * @returns Un Buffer con el contenido del archivo o null si falla.
+   * Descarga todos los archivos adjuntos de un mensaje de Teams
+   * NOTA: Las imágenes pegadas directamente en Teams tienen URLs protegidas
+   * que no se pueden descargar fácilmente. Solo funcionan archivos adjuntados
+   * con el botón de "Adjuntar".
    */
-  async downloadTeamsAttachment(turnContext: TurnContext): Promise<{ buffer: Buffer; contentType: string; name: string } | null> {
+  async downloadAllAttachments(turnContext: TurnContext): Promise<DownloadedAttachment[]> {
     const activity = turnContext.activity;
+    const attachments: DownloadedAttachment[] = [];
 
-    // Verificar si hay adjuntos
     if (!activity.attachments || activity.attachments.length === 0) {
-      return null;
+      return attachments;
     }
 
-    // Tomamos el primer adjunto (puedes iterar si envían varios)
-    const attachment = activity.attachments[0];
-    const url = attachment.contentUrl;
+    for (const attachment of activity.attachments) {
+      // Ignorar cards y tipos no descargables
+      if (this.isNonFileAttachment(attachment)) {
+        continue;
+      }
 
-    if (!url) {
-      this.logger.warn('El adjunto no tiene una URL de contenido válida.');
-      return null;
+      // Solo procesar FileDownloadInfo (archivos adjuntados con el botón)
+      if (attachment.contentType === 'application/vnd.microsoft.teams.file.download.info') {
+        const downloaded = await this.downloadFileAttachment(attachment);
+        if (downloaded) {
+          attachments.push(downloaded);
+        }
+      }
     }
 
+    return attachments;
+  }
+
+  /**
+   * Descarga un archivo adjunto que viene como FileDownloadInfo
+   */
+  private async downloadFileAttachment(attachment: Attachment): Promise<DownloadedAttachment | null> {
     try {
-      // 1. Obtener el token de autenticación del Connector de Bot Framework
-      // TurnContext proporciona connectorClient si está usando BotFrameworkAdapter
-      const connectorClient = (turnContext as any).adapter?.connectorClient 
-        || (turnContext as any).adapter?.getOrCreateConnectorClient?.(activity.serviceUrl);
+      const downloadInfo = attachment.content as { downloadUrl?: string; name?: string };
+      const url = downloadInfo?.downloadUrl;
+      const fileName = attachment.name || downloadInfo?.name || 'archivo';
 
-      if (!connectorClient) {
-        this.logger.error('No se pudo obtener connectorClient del adaptador.');
+      if (!url) {
+        this.logger.warn(`Adjunto sin URL de descarga: ${fileName}`);
         return null;
       }
-      const token = connectorClient.credentials && connectorClient.credentials.token;
-      if (!token) {
-        this.logger.error('No se pudo obtener el token de autenticación.');
-        return null;
-      }
-      // 2. Descargar el archivo usando el token en los headers
-      this.logger.log(`Descargando archivo desde Teams: ${attachment.name}`);
+
+      this.logger.log(`Descargando archivo de Teams: ${fileName}`);
+
       const response = await firstValueFrom(
         this.httpService.get(url, {
-          responseType: 'arraybuffer', // Crucial para manejar binarios (Imágenes/PDFs)
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
+          responseType: 'arraybuffer',
+          timeout: 30000,
+        }),
       );
 
+      const buffer = Buffer.from(response.data);
+      const contentType = attachment.contentType || this.inferMimeType(fileName);
+
+      this.logger.log(`✅ Archivo descargado: ${fileName} (${buffer.length} bytes)`);
+
       return {
-        buffer: Buffer.from(response.data),
-        contentType: attachment.contentType,
-        name: attachment.name || 'archivo_adjunto',
+        buffer,
+        contentType,
+        name: fileName,
       };
-    } catch (error) {
-      this.logger.error(`Error al descargar el adjunto de Teams: ${error.message}`, error.stack);
+    } catch (error: any) {
+      this.logger.error(`Error descargando archivo de Teams: ${error.message}`);
       return null;
     }
+  }
+
+  /**
+   * Infiere el MIME type basándose en la extensión
+   */
+  private inferMimeType(fileName: string): string {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      mp4: 'video/mp4',
+      mp3: 'audio/mpeg',
+      pdf: 'application/pdf',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+    return mimeTypes[ext || ''] || 'application/octet-stream';
+  }
+
+  /**
+   * Verifica si el attachment no es un archivo descargable
+   */
+  private isNonFileAttachment(attachment: Attachment): boolean {
+    const nonFileTypes = [
+      'application/vnd.microsoft.card.adaptive',
+      'application/vnd.microsoft.card.hero',
+      'application/vnd.microsoft.card.thumbnail',
+      'application/vnd.microsoft.card.signin',
+      'text/html',
+      'image/*', // Imágenes inline no son descargables fácilmente
+    ];
+    return nonFileTypes.some(type => 
+      attachment.contentType === type || 
+      attachment.contentType?.startsWith(type.replace('*', ''))
+    );
   }
 }

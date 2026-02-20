@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CloudAdapter,
@@ -10,17 +10,21 @@ import {
   Channels,
   Activity,
   Attachment,
+  CardFactory,
 } from 'botbuilder';
 
 @Injectable()
 export class GraphService implements OnModuleInit {
+  private readonly logger = new Logger(GraphService.name);
   public adapter: CloudAdapter;
   private appId: string;
+  private publicUrl: string;
 
   constructor(private configService: ConfigService) {}
 
   onModuleInit() {
     this.initializeBotAdapter();
+    this.publicUrl = this.configService.get<string>('PUBLIC_URL') ?? '';
   }
 
   private initializeBotAdapter() {
@@ -29,7 +33,7 @@ export class GraphService implements OnModuleInit {
     const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
 
     if (!appId || !appPassword || !tenantId) {
-      console.error('❌ Faltan credenciales del Bot (AppID, Password o TenantID)');
+      this.logger.error('❌ Faltan credenciales del Bot (AppID, Password o TenantID)');
       return;
     }
 
@@ -48,47 +52,129 @@ export class GraphService implements OnModuleInit {
     );
 
     this.adapter = new CloudAdapter(botFrameworkAuthentication);
-    
+
     this.adapter.onTurnError = async (context, error) => {
-      console.error(`\n [onTurnError] unhandled error: ${error}`);
+      this.logger.error(`[onTurnError] unhandled error: ${error}`);
       await context.sendTraceActivity(
         'OnTurnError Trace',
         `${error}`,
         'https://www.botframework.com/schemas/error',
-        'TurnError'
+        'TurnError',
       );
     };
 
-    console.log('🤖 Bot Adapter inicializado correctamente (Client Credentials)');
+    this.logger.log('🤖 Bot Adapter inicializado correctamente');
   }
 
   /**
-   * Helper privado para procesar los buffers y convertirlos en Attachments de Teams
+   * Construye un attachment nativo para Teams
+   * Para imágenes usa base64 inline que funciona mejor que URLs externas
    */
-  private buildAttachment(fileBuffer?: Buffer, mimetype?: string, fileName?: string, messageId?: string): Attachment | null {
-    if (!fileBuffer || !mimetype) return null;
+  private buildMediaAttachment(
+    mediaUrl: string,
+    mimetype: string,
+    fileName?: string,
+    caption?: string,
+    base64Data?: string,
+  ): { attachment: Attachment | null; textMessage: string } {
+    if (!mimetype) return { attachment: null, textMessage: '' };
 
-    // 1. Si es imagen, usamos Base64 nativo (Soportado por Teams)
+    // Para imágenes: usar inline base64 si está disponible, sino URL
     if (mimetype.startsWith('image/')) {
-      const base64Image = fileBuffer.toString('base64');
-      return {
-        contentType: mimetype,
-        contentUrl: `data:${mimetype};base64,${base64Image}`,
-        name: fileName || 'imagen_whatsapp.jpg',
-      };
+      if (base64Data) {
+        // Usar base64 inline - funciona mejor en Teams
+        const imageAttachment: Attachment = {
+          contentType: mimetype,
+          contentUrl: `data:${mimetype};base64,${base64Data}`,
+          name: fileName || 'imagen.jpg',
+        };
+        return { attachment: imageAttachment, textMessage: '' };
+      } else if (mediaUrl) {
+        // Fallback a URL
+        const heroCard = CardFactory.heroCard(
+          '',
+          caption || '',
+          [mediaUrl],
+          [],
+        );
+        return { attachment: heroCard, textMessage: '' };
+      }
     }
 
-    // 2. Si es PDF, requiere URL pública.
-    // Asumimos que guardaste el Buffer en MongoDB y este endpoint lo devuelve.
-    if (mimetype.startsWith('application/pdf') || mimetype.startsWith('application/')) {
-      const publicDomain = this.configService.get<string>('PUBLIC_APP_URL'); // ej: https://tu-ngrok.app
-      const downloadUrl = `${publicDomain}/media/download/${messageId}`; 
-      
-      return {
-        contentType: mimetype,
-        contentUrl: downloadUrl,
-        name: fileName || 'documento.pdf',
+    // Para videos: Hero Card con botón para ver
+    if (mimetype.startsWith('video/') && mediaUrl) {
+      const heroCard = CardFactory.heroCard(
+        '🎬 Video recibido',
+        caption || fileName || 'video.mp4',
+        [],
+        [{ type: 'openUrl', title: '▶️ Ver Video', value: mediaUrl }],
+      );
+      return { attachment: heroCard, textMessage: '' };
+    }
+
+    // Para audio/notas de voz: Hero Card con botón para escuchar
+    if (mimetype.startsWith('audio/') && mediaUrl) {
+      const isVoiceNote = mimetype.includes('opus') || mimetype.includes('ogg');
+      const heroCard = CardFactory.heroCard(
+        isVoiceNote ? '🎤 Nota de voz' : '🎵 Audio recibido',
+        caption || '',
+        [],
+        [{ type: 'openUrl', title: '🔊 Escuchar', value: mediaUrl }],
+      );
+      return { attachment: heroCard, textMessage: '' };
+    }
+
+    // Para documentos: Hero Card con botón de descarga
+    if (mediaUrl) {
+      const heroCard = CardFactory.heroCard(
+        '📎 Documento recibido',
+        `📄 ${fileName || 'documento'}${caption ? '\n' + caption : ''}`,
+        [],
+        [{ type: 'openUrl', title: '⬇️ Descargar', value: mediaUrl }],
+      );
+      return { attachment: heroCard, textMessage: '' };
+    }
+
+    return { attachment: null, textMessage: '' };
+  }
+
+  /**
+   * Construye un Adaptive Card como alternativa (para casos donde Hero Card no funcione)
+   */
+  private buildAdaptiveCardForMedia(
+    mediaUrl: string,
+    mimetype: string,
+    fileName?: string,
+    caption?: string,
+  ): Attachment | null {
+    if (!mediaUrl || !mimetype) return null;
+
+    // Imagen con Adaptive Card
+    if (mimetype.startsWith('image/')) {
+      const card = {
+        type: 'AdaptiveCard',
+        $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+        version: '1.3',
+        body: [
+          {
+            type: 'Image',
+            url: mediaUrl,
+            size: 'stretch',
+            altText: fileName || 'Imagen de WhatsApp',
+          },
+        ],
       };
+
+      if (caption) {
+        card.body.push({
+          type: 'TextBlock',
+          text: caption,
+          wrap: true,
+          size: 'small',
+        } as any);
+      }
+
+      return CardFactory.adaptiveCard(card);
     }
 
     return null;
@@ -96,22 +182,21 @@ export class GraphService implements OnModuleInit {
 
   /**
    * Crea un nuevo hilo en Teams con un "Ticket" de cabecera
-   * y envía el mensaje del usuario como primera respuesta.
    */
   async sendMessageToChannel(
     userName: string,
     userPhone: string,
     content: string,
-    fileBuffer?: Buffer,
+    mediaUrl?: string,
     mimetype?: string,
     fileName?: string,
-    messageId?: string,
+    base64Data?: string,
   ): Promise<{ id: string }> {
     const channelId = this.configService.get<string>('teamsChannelId');
     const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
     const serviceUrl = 'https://smba.trafficmanager.net/amer/';
 
-    // 1. DISEÑO DEL ENCABEZADO
+    // Encabezado del hilo
     const rootActivity = {
       type: 'message',
       text: `👤 <b>Cliente:</b> ${userName}<br>📱 <b>WhatsApp:</b> +${userPhone}<br>🟢 <b>Estado:</b> Nuevo Chat`,
@@ -129,7 +214,6 @@ export class GraphService implements OnModuleInit {
 
     let newConversationId = '';
 
-    // 2. CREAR EL HILO
     await this.adapter.createConversationAsync(
       this.appId,
       Channels.Msteams,
@@ -138,13 +222,11 @@ export class GraphService implements OnModuleInit {
       conversationParameters,
       async (context) => {
         const ref = TurnContext.getConversationReference(context.activity);
-        
-        // CORRECCIÓN 1: Usar ?. (optional chaining) y fallback para evitar error de undefined
-        newConversationId = ref.conversation?.id || ''; 
-        console.log('✅ Hilo creado. ID:', newConversationId);
+        newConversationId = ref.conversation?.id || '';
+        this.logger.log(`✅ Hilo creado. ID: ${newConversationId}`);
 
-        // 3. ENVIAR EL CONTENIDO REAL
-        await this.replyToThreadInternal(context, content, fileBuffer, mimetype, fileName, messageId);
+        // Enviar el mensaje del cliente
+        await this.replyToThreadInternal(context, content, mediaUrl, mimetype, fileName, base64Data);
       },
     );
 
@@ -152,88 +234,80 @@ export class GraphService implements OnModuleInit {
   }
 
   /**
-   * Helper interno para responder inmediatamente.
-   * CORRECCIÓN 2: Ya no recibimos threadId, usamos el context directo.
+   * Helper interno para responder dentro de createConversationAsync
    */
   private async replyToThreadInternal(
     context: TurnContext,
     content: string,
-    fileBuffer?: Buffer,
+    mediaUrl?: string,
     mimetype?: string,
     fileName?: string,
-    messageId?: string,
+    base64Data?: string,
   ) {
-      // Pequeña pausa estética
-      await new Promise(r => setTimeout(r, 500)); 
+    await new Promise((r) => setTimeout(r, 500)); // Pequeña pausa
 
-      // CORRECCIÓN 2: Definimos el tipo Partial<Activity> y quitamos 'conversation'
-      // Al usar context.sendActivity, el bot ya sabe que debe responder en ESTE hilo.
-      const replyActivity: Partial<Activity> = {
-          type: 'message',
-          text: content,
-          textFormat: 'xml',
-          attachments: []
-      };
+    const replyActivity: Partial<Activity> = {
+      type: 'message',
+      text: content,
+      textFormat: 'xml',
+      attachments: [],
+    };
 
-
-      // Intentamos construir el adjunto
-      const attachment = this.buildAttachment(fileBuffer, mimetype, fileName, messageId);
+    // Agregar media si existe
+    if (mimetype && (mediaUrl || base64Data)) {
+      this.logger.log(`📎 Adjuntando media: ${mimetype} - ${base64Data ? 'base64' : mediaUrl}`);
       
+      const { attachment } = this.buildMediaAttachment(mediaUrl || '', mimetype, fileName, content, base64Data);
       if (attachment) {
         replyActivity.attachments!.push(attachment);
-        
-        // Si es PDF, a Teams le gusta que le reforcemos con un texto clickable
-        if (attachment.contentType.includes('pdf')) {
-            replyActivity.text += `<br><br>📎 <b>Documento recibido:</b> <a href="${attachment.contentUrl}">Descargar ${fileName || 'PDF'}</a>`;
-        }
       }
+    }
 
-      await context.sendActivity(replyActivity);
+    await context.sendActivity(replyActivity);
   }
 
-  // Reply to a thread para enviar un mensaje y un adjunto
+  /**
+   * Responde a un hilo existente en Teams
+   */
   async replyToThread(
     threadId: string,
     content: string,
-    fileBuffer?: Buffer,
+    mediaUrl?: string,
     mimetype?: string,
     fileName?: string,
-    messageId?: string
+    base64Data?: string,
   ) {
     const serviceUrl = 'https://smba.trafficmanager.net/amer/';
-    
+
     const conversationReference = {
-        conversation: { id: threadId },
-        serviceUrl: serviceUrl,
+      conversation: { id: threadId },
+      serviceUrl: serviceUrl,
     };
 
     await this.adapter.continueConversationAsync(
-        this.appId,
-        conversationReference as any,
-        async (context) => {
-            // 1. Creamos la actividad base (solo una vez)
-            const replyActivity = {
-              type: 'message',
-              text: content,
-              textFormat: 'xml',
-              attachments: [] as any[]
-            };
+      this.appId,
+      conversationReference as any,
+      async (context) => {
+        const replyActivity: Partial<Activity> = {
+          type: 'message',
+          text: content,
+          textFormat: 'xml',
+          attachments: [],
+        };
 
-            // 2. Intentamos construir y agregar el adjunto
-            const attachment = this.buildAttachment(fileBuffer, mimetype, fileName, messageId);
-            
-            if (attachment) {
-              replyActivity.attachments.push(attachment);
-              
-              if (typeof attachment.contentType === 'string' && attachment.contentType.includes('pdf')) {
-                replyActivity.text += `<br><br>📎 <b>Documento recibido:</b> <a href="${attachment.contentUrl}">Descargar ${fileName || 'PDF'}</a>`;
-              }
-            }
-
-            // 3. Enviamos a Teams UNA SOLA VEZ
-            await context.sendActivity(replyActivity);
-            console.log(`✅ Respuesta enviada al hilo ${threadId}`);
+        // Agregar media si existe
+        if (mimetype && (mediaUrl || base64Data)) {
+          this.logger.log(`📎 Adjuntando media al hilo: ${mimetype} - ${base64Data ? 'base64' : mediaUrl}`);
+          
+          const { attachment } = this.buildMediaAttachment(mediaUrl || '', mimetype, fileName, undefined, base64Data);
+          if (attachment) {
+            replyActivity.attachments!.push(attachment);
+          }
         }
-      );
+
+        await context.sendActivity(replyActivity);
+        this.logger.log(`✅ Respuesta enviada al hilo ${threadId}`);
+      },
+    );
   }
 }

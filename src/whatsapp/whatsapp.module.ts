@@ -7,13 +7,14 @@ import { Conversation } from '../common/entities/conversation.entity';
 import { HttpModule } from '@nestjs/axios';
 import { TeamsModule } from '../teams/teams.module';
 import { MessagesModule } from '../messages/messages.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
   imports: [
     HttpModule,
     forwardRef(() => TeamsModule),
     MessagesModule,
-    // Registramos la entidad para que TypeORM la reconozca
+    MediaModule,
     TypeOrmModule.forFeature([Conversation]),
   ],
   controllers: [WhatsappController],

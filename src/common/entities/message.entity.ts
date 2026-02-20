@@ -11,25 +11,27 @@ import {
 import { Conversation } from './conversation.entity';
 
 @Entity('messages')
-@Index(['waMessageId'], { unique: true })
-@Index(['teamsMessageId'], { unique: true })
 export class Message {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Index()
   @Column()
   conversationId: number; // ID de la conversación a la que pertenece
 
-  @Column()
+  @Column({ type: 'text' })
   content: string; // Contenido del mensaje
 
   @Column()
   source: string; // 'whatsapp' o 'teams'
 
-  @Column({ nullable: true })
+  // Índice para búsqueda rápida, duplicados se manejan en el servicio
+  @Index()
+  @Column({ type: 'varchar', nullable: true })
   teamsMessageId: string; // ID del mensaje en Teams (si viene de Teams)
 
-  @Column({ nullable: true })
+  @Index()
+  @Column({ type: 'varchar', nullable: true })
   waMessageId: string; // ID del mensaje en WhatsApp (si viene de WhatsApp)
 
   @Column({ nullable: true })

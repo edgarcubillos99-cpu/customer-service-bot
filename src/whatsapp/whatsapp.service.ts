@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
 import { HttpService } from '@nestjs/axios';
@@ -11,9 +11,11 @@ import { WhatsappResponse } from '../common/whatsapp-response.interface';
 import { Observable } from 'rxjs';
 import { Conversation } from '../common/entities/conversation.entity';
 import { GraphService } from '../teams/graph.service';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class WhatsappService {
+  private readonly logger = new Logger(WhatsappService.name);
   private readonly token: string;
   private readonly phoneId: string;
 
@@ -22,7 +24,8 @@ export class WhatsappService {
     private readonly configService: ConfigService,
     private readonly conversationsService: ConversationsService,
     private readonly messagesService: MessagesService,
-    private readonly botService: GraphService,
+    private readonly graphService: GraphService,
+    private readonly mediaService: MediaService,
   ) {
     this.token = this.configService.get<string>('whatsappToken') ?? '';
     this.phoneId = this.configService.get<string>('whatsappPhoneId') ?? '';
@@ -36,45 +39,80 @@ export class WhatsappService {
     mediaId: string,
     mimetype: string,
     fileName: string,
+    caption?: string,
   ) {
     try {
-      // 1. Buscamos si ya existe una conversación ACTIVA (estado OPEN)
-      let conversation = await this.conversationsService.findByPhone(from);
-      let finalContent = `<b>${name}:</b> ${text}`;
-      
-      // Variable para almacenar el archivo si existe
-      let fileBuffer: Buffer | undefined = undefined;
+      // 1. Verificar duplicados en BD antes de procesar
+      const messageExists = await this.messagesService.messageExistsByWaId(messageId);
+      if (messageExists) {
+        this.logger.debug(`⏭️ Mensaje duplicado ignorado (BD): ${messageId}`);
+        return;
+      }
 
-      // 2. Si viene un mediaId, descargamos el archivo de Meta
+      // 2. Buscar o crear conversación
+      let conversation = await this.conversationsService.findByPhone(from);
+      
+      // 3. Procesar media si existe
+      let mediaResult: { id: number; publicUrl: string; mimetype: string; fileName: string; base64Data?: string } | null = null;
+      
       if (mediaId) {
-        fileBuffer = await this.downloadMediaFromMeta(mediaId);
-        if (fileBuffer) {
-           console.log(`✅ Archivo descargado exitosamente: ${fileName || 'imagen'}`);
-           finalContent += `<br><i>(Archivo adjunto procesado)</i>`;
+        this.logger.log(`📎 Procesando archivo: ${mimetype} - ${fileName || 'sin nombre'}`);
+        
+        const result = await this.mediaService.downloadAndSaveFromWhatsApp(
+          mediaId,
+          mimetype,
+          fileName,
+          caption,
+          conversation?.id,
+        );
+
+        if (result) {
+          mediaResult = {
+            id: result.id,
+            publicUrl: result.publicUrl,
+            mimetype: result.mimetype,
+            fileName: result.fileName,
+            base64Data: result.base64Data, // Incluir base64 para Teams
+          };
+          this.logger.log(`✅ Archivo guardado: ID=${result.id}, URL=${result.publicUrl}, base64=${result.base64Data ? 'sí' : 'no'}`);
+        } else {
+          this.logger.warn(`⚠️ No se pudo descargar el archivo de WhatsApp`);
         }
       }
 
+      // 4. Preparar contenido para Teams
+      let teamsContent = `<b>${name}:</b> ${text || caption || ''}`;
+      
+      // Agregar indicador de tipo de media si aplica
+      if (mediaResult && !text && !caption) {
+        const mediaTypeLabel = this.getMediaTypeLabel(mimetype);
+        teamsContent = `<b>${name}:</b> ${mediaTypeLabel}`;
+      }
+
+      // 5. Enviar a Teams
       if (conversation && conversation.teamsThreadId) {
         // Responder a un hilo existente
-        await this.botService.replyToThread(
+        await this.graphService.replyToThread(
           conversation.teamsThreadId,
-          finalContent,
-          fileBuffer,
-          mimetype,
-          fileName,
+          teamsContent,
+          mediaResult?.publicUrl,
+          mediaResult?.mimetype,
+          mediaResult?.fileName,
+          mediaResult?.base64Data, // Pasar base64 para mejor compatibilidad
         );
       } else {
         // Crear nuevo hilo
-        const result = await this.botService.sendMessageToChannel(
-          name,         // Nombre del cliente
-          from,         // Número de teléfono
-          text,         // El mensaje
-          fileBuffer,   // El archivo
-          mimetype,     // El tipo de archivo
-          fileName,     // El nombre del archivo
+        const result = await this.graphService.sendMessageToChannel(
+          name,
+          from,
+          text || caption || this.getMediaTypeLabel(mimetype),
+          mediaResult?.publicUrl,
+          mediaResult?.mimetype,
+          mediaResult?.fileName,
+          mediaResult?.base64Data, // Pasar base64 para mejor compatibilidad
         );
 
-        // Guardamos la nueva conversación
+        // Guardar la nueva conversación
         conversation = (await this.conversationsService.create({
           waPhoneNumber: from,
           waCustomerName: name,
@@ -82,67 +120,44 @@ export class WhatsappService {
         })) as Conversation;
       }
 
-      // 2. Guardamos el mensaje en la base de datos
+      // 6. Guardar el mensaje en la base de datos
       if (!conversation) {
         throw new Error('No se pudo crear o encontrar la conversación');
       }
 
       await this.messagesService.saveMessage({
         conversationId: conversation.id,
-        content: text,
+        content: text || caption || this.getMediaTypeLabel(mimetype),
         source: 'whatsapp',
         waMessageId: messageId,
         senderName: name,
       });
-    } catch (error) {
-      console.error('❌ Error manejando mensaje de WhatsApp:', error);
+
+      this.logger.log(`✅ Mensaje procesado: ${messageId}`);
+    } catch (error: any) {
+      this.logger.error(`❌ Error manejando mensaje de WhatsApp: ${error.message}`);
     }
   }
 
-  // Método para descargar el archivo de Meta
-  private async downloadMediaFromMeta(mediaId: string): Promise<Buffer | undefined> {
-    try {
-      // Paso A: Obtener la URL temporal del archivo
-      const metaUrlResponse = await lastValueFrom(
-        this.http.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
-          headers: { Authorization: `Bearer ${this.token}` },
-        })
-      );
-
-      const mediaUrl = metaUrlResponse.data.url;
-      if (!mediaUrl) throw new Error('Meta no devolvió una URL válida');
-
-      // Paso B: Descargar el binario usando la URL temporal y el token
-      const downloadResponse = await lastValueFrom(
-        this.http.get(mediaUrl, {
-          responseType: 'arraybuffer', // Fundamental para imágenes/PDFs
-          headers: { Authorization: `Bearer ${this.token}` },
-        })
-      );
-
-      return Buffer.from(downloadResponse.data);
-    } catch (error) {
-      console.error(`❌ Error descargando media ${mediaId} de Meta:`, error);
-      return undefined;
-    }
+  /**
+   * Obtiene una etiqueta descriptiva para el tipo de media
+   */
+  private getMediaTypeLabel(mimetype: string): string {
+    if (mimetype.startsWith('image/webp')) return '🎨 [Sticker]';
+    if (mimetype.startsWith('image/')) return '📷 [Imagen]';
+    if (mimetype.startsWith('video/')) return '🎬 [Video]';
+    if (mimetype.startsWith('audio/')) return '🎵 [Audio]';
+    if (mimetype.includes('pdf')) return '📄 [PDF]';
+    if (mimetype.startsWith('application/')) return '📎 [Documento]';
+    return '📁 [Archivo]';
   }
 
-  // Método nuevo para que TeamsHandler lo llame
-  async sendMessageToWhatsappByThreadId(threadId: string, text: string) {
-    const conversation =
-      await this.conversationsService.findByThreadId(threadId); // Necesitas crear este método
-    if (conversation) {
-      await this.sendMessage(conversation.waPhoneNumber, text);
-    } else {
-      console.error('No se encontró conversación para el hilo', threadId);
-    }
-  }
-
+  /**
+   * Envía un mensaje de texto a WhatsApp
+   */
   async sendMessage(to: string, message: string): Promise<WhatsappResponse> {
     if (!this.token || !this.phoneId) {
-      throw new InternalServerErrorException(
-        'WhatsApp API credentials are missing.',
-      );
+      throw new InternalServerErrorException('WhatsApp API credentials are missing.');
     }
 
     const url = `https://graph.facebook.com/v18.0/${this.phoneId}/messages`;
@@ -159,38 +174,71 @@ export class WhatsappService {
     };
 
     try {
-      // Tipado seguro del Observable
       const observable: Observable<AxiosResponse<WhatsappResponse>> =
         this.http.post(url, payload, { headers });
 
-      // Convertir a promesa con tipo seguro
-      const response: AxiosResponse<WhatsappResponse> =
-        await lastValueFrom(observable);
+      const response: AxiosResponse<WhatsappResponse> = await lastValueFrom(observable);
 
-      // Retorno seguro (WhatsappResponse)
+      this.logger.log(`✅ Mensaje enviado a WhatsApp: ${to}`);
       return response.data satisfies WhatsappResponse;
     } catch (err: unknown) {
-      // Manejo de error seguro: validación por tipo
       if (
         typeof err === 'object' &&
         err !== null &&
         'response' in err &&
         typeof (err as { response?: unknown })?.response === 'object'
       ) {
-        const axiosError = err as {
-          response?: { data?: unknown };
-          message?: string;
-        };
-
-        console.error(
-          'Error enviando WhatsApp:',
-          axiosError.response?.data ?? axiosError.message ?? err,
-        );
+        const axiosError = err as { response?: { data?: unknown }; message?: string };
+        this.logger.error('Error enviando WhatsApp:', axiosError.response?.data ?? axiosError.message ?? err);
       } else {
-        console.error('Error desconocido enviando WhatsApp:', err);
+        this.logger.error('Error desconocido enviando WhatsApp:', err);
       }
 
       throw new InternalServerErrorException('No se pudo enviar el mensaje.');
+    }
+  }
+
+  /**
+   * Envía un archivo multimedia a WhatsApp
+   */
+  async sendMediaMessage(
+    to: string,
+    mediaId: number,
+    caption?: string,
+  ): Promise<boolean> {
+    try {
+      return await this.mediaService.sendMediaToWhatsApp(to, mediaId, caption);
+    } catch (error: any) {
+      this.logger.error(`Error enviando media a WhatsApp: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Envía un mensaje a WhatsApp buscando la conversación por threadId de Teams
+   */
+  async sendMessageToWhatsappByThreadId(threadId: string, text: string): Promise<void> {
+    const conversation = await this.conversationsService.findByThreadId(threadId);
+    if (conversation) {
+      await this.sendMessage(conversation.waPhoneNumber, text);
+    } else {
+      this.logger.error(`No se encontró conversación para el hilo: ${threadId}`);
+    }
+  }
+
+  /**
+   * Envía un archivo a WhatsApp buscando la conversación por threadId de Teams
+   */
+  async sendMediaToWhatsappByThreadId(
+    threadId: string,
+    mediaId: number,
+    caption?: string,
+  ): Promise<void> {
+    const conversation = await this.conversationsService.findByThreadId(threadId);
+    if (conversation) {
+      await this.mediaService.sendMediaToWhatsApp(conversation.waPhoneNumber, mediaId, caption);
+    } else {
+      this.logger.error(`No se encontró conversación para el hilo: ${threadId}`);
     }
   }
 }
