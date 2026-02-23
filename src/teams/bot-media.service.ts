@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
 import { TurnContext, Attachment } from 'botbuilder';
 import { firstValueFrom } from 'rxjs';
 
@@ -13,7 +14,10 @@ export interface DownloadedAttachment {
 export class BotMediaService {
   private readonly logger = new Logger(BotMediaService.name);
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService // <-- Inyectamos ConfigService para Graph API
+  ) {}
 
   async downloadAllAttachments(turnContext: TurnContext): Promise<DownloadedAttachment[]> {
     const activity = turnContext.activity;
@@ -39,19 +43,35 @@ export class BotMediaService {
     for (const attachment of activity.attachments) {
       this.logger.log(`🔍 Evaluando adjunto: Name=${attachment.name}, ContentType=${attachment.contentType}`);
       
+      let downloaded: DownloadedAttachment | null = null;
+
+      // Interceptar text/html para extraer archivos de SharePoint (Canales de Teams)
+      if (attachment.contentType === 'text/html') {
+        const htmlContent = typeof attachment.content === 'string' 
+          ? attachment.content 
+          : JSON.stringify(attachment.content);
+          
+        // Buscar la URL de SharePoint incrustada
+        const sharepointUrlMatch = htmlContent?.match(/href="(https:\/\/[a-zA-Z0-9-]+\.sharepoint\.com\/[^"]+)"/i);
+        
+        if (sharepointUrlMatch && sharepointUrlMatch[1]) {
+          this.logger.log(`🔗 Enlace de SharePoint detectado, descargando vía Graph API...`);
+          downloaded = await this.downloadSharePointFile(sharepointUrlMatch[1]);
+        } else {
+          this.logger.log(`⏩ Ignorando adjunto HTML normal (sin archivo)`);
+          continue;
+        }
+      }
       // Ignorar tarjetas UI
-      if (this.isNonFileAttachment(attachment)) {
+      else if (this.isNonFileAttachment(attachment)) {
         this.logger.log(`⏩ Ignorando adjunto no descargable (${attachment.contentType})`);
         continue;
       }
-
-      let downloaded: DownloadedAttachment | null = null;
-
       // CASO A: Archivos nativos de Bot Framework (Chats 1:1)
-      if (attachment.contentType === 'application/vnd.microsoft.teams.file.download.info') {
+      else if (attachment.contentType === 'application/vnd.microsoft.teams.file.download.info') {
         downloaded = await this.downloadTeamsInfoFile(attachment);
       }
-      // CASO B: Archivos de Canales (PDFs, Excel, Docs, Imágenes adjuntas)
+      // CASO B: Archivos de Canales (PDFs, Excel, Docs, Imágenes adjuntas copiadas en línea)
       else if (attachment.contentUrl) {
         downloaded = await this.downloadGenericFile(attachment, botToken);
       }
@@ -59,8 +79,7 @@ export class BotMediaService {
       if (downloaded) {
         attachments.push(downloaded);
       } else {
-        this.logger.warn(`❌ No se pudo descargar: ${attachment.name}. Imprimiendo payload para depuración:`);
-        this.logger.debug(JSON.stringify(attachment, null, 2));
+        this.logger.warn(`❌ No se pudo descargar: ${attachment.name || 'Archivo'}.`);
       }
     }
 
@@ -68,12 +87,92 @@ export class BotMediaService {
   }
 
   /**
-   * Descarga archivos de tipo FileDownloadInfo
+   * Obtiene un token de acceso para Microsoft Graph API usando Client Credentials
    */
+  private async getGraphToken(): Promise<string | null> {
+    const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
+    const clientId = this.configService.get<string>('MICROSOFT_APP_ID');
+    const clientSecret = this.configService.get<string>('MICROSOFT_APP_PASSWORD');
+
+    if (!tenantId || !clientId || !clientSecret) {
+      this.logger.error('❌ Faltan credenciales para Graph API en las variables de entorno');
+      return null;
+    }
+
+    const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+    const params = new URLSearchParams();
+    params.append('client_id', clientId);
+    params.append('scope', 'https://graph.microsoft.com/.default');
+    params.append('client_secret', clientSecret);
+    params.append('grant_type', 'client_credentials');
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(url, params.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        })
+      );
+      return response.data.access_token;
+    } catch (error: any) {
+      this.logger.error(`❌ Error obteniendo token Graph: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Descarga un archivo directamente desde SharePoint usando Graph API
+   */
+  private async downloadSharePointFile(sharePointUrl: string): Promise<DownloadedAttachment | null> {
+    try {
+      const token = await this.getGraphToken();
+      if (!token) return null;
+
+      // 1. Codificar la URL al formato "sharing token" que exige Microsoft Graph
+      const base64Value = Buffer.from(sharePointUrl).toString('base64');
+      const encodedUrl = 'u!' + base64Value.replace(/=/g, '').replace(/\//g, '_').replace(/\+/g, '-');
+
+      // 2. Obtener metadatos del archivo
+      const driveItemUrl = `https://graph.microsoft.com/v1.0/shares/${encodedUrl}/driveItem`;
+      const metaResponse = await firstValueFrom(
+        this.httpService.get(driveItemUrl, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      );
+      
+      const fileData = metaResponse.data;
+      const downloadUrl = fileData['@microsoft.graph.downloadUrl'];
+      const fileName = fileData.name || `archivo_${Date.now()}`;
+      const mimeType = fileData.file?.mimeType || this.inferMimeType(fileName);
+
+      if (!downloadUrl) {
+        this.logger.error('❌ No se encontró URL de descarga en SharePoint');
+        return null;
+      }
+
+      this.logger.log(`📥 Descargando binario de SharePoint: ${fileName}`);
+      
+      // 3. Descargar el archivo real
+      const fileResponse = await firstValueFrom(
+        this.httpService.get(downloadUrl, {
+          responseType: 'arraybuffer',
+          timeout: 45000
+        })
+      );
+
+      return {
+        buffer: Buffer.from(fileResponse.data),
+        contentType: mimeType,
+        name: fileName,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error descargando desde SharePoint: ${error.response?.data?.error?.message || error.message}`);
+      return null;
+    }
+  }
+
   private async downloadTeamsInfoFile(attachment: Attachment): Promise<DownloadedAttachment | null> {
     try {
       let contentObj = attachment.content;
-      // Teams a veces serializa el objeto en un string
       if (typeof contentObj === 'string') {
         try { contentObj = JSON.parse(contentObj); } catch(e){}
       }
@@ -97,9 +196,6 @@ export class BotMediaService {
     }
   }
 
-  /**
-   * Descarga archivos adjuntos de canales usando el Token del Bot
-   */
   private async downloadGenericFile(attachment: Attachment, token: string): Promise<DownloadedAttachment | null> {
     try {
       const url = attachment.contentUrl;
@@ -109,7 +205,6 @@ export class BotMediaService {
       this.logger.log(`📥 Descargando archivo genérico (PDF/Doc/Adjunto): ${fileName}`);
 
       const headers: Record<string, string> = {};
-      // Inyectar autorización para brincar la seguridad de Teams
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
@@ -118,7 +213,6 @@ export class BotMediaService {
 
       return {
         buffer: Buffer.from(response.data),
-        // Si no viene contentType o es octet-stream, lo inferimos por el nombre
         contentType: attachment.contentType && attachment.contentType !== 'application/octet-stream' 
                      ? attachment.contentType 
                      : this.inferMimeType(fileName),
@@ -147,8 +241,8 @@ export class BotMediaService {
       'application/vnd.microsoft.card.adaptive',
       'application/vnd.microsoft.card.hero',
       'application/vnd.microsoft.card.thumbnail',
-      'application/vnd.microsoft.card.signin',
-      'text/html' // No bloqueamos 'image/*' aquí para permitir su descarga
+      'application/vnd.microsoft.card.signin'
+      // ¡IMPORTANTE! Eliminé 'text/html' de aquí para que el bucle principal no lo bloquee.
     ];
     return nonFileTypes.some(type => 
       attachment.contentType === type || 

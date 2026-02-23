@@ -139,6 +139,44 @@ export class GraphService implements OnModuleInit {
   }
 
   /**
+   * Intercepta mensajes que contienen una ubicación y los convierte en una tarjeta interactiva.
+   */
+  private formatLocationCard(content: string): { text: string; attachment?: Attachment } {
+    // Detectamos si el mensaje tiene el formato de una ubicación
+    if (content.includes('📍 Ubicación:') || content.includes('maps.google.com') || content.includes('googleusercontent.com')) {
+      
+      // Extraer la URL del enlace usando Regex
+      const urlMatch = content.match(/(https?:\/\/[^\s]+)/);
+      const mapUrl = urlMatch ? urlMatch[0] : null;
+
+      // Extraer las coordenadas
+      const coordMatch = content.match(/Coordenadas:\s*([0-9.-]+,\s*[0-9.-]+)/i);
+      const coordinates = coordMatch ? coordMatch[1] : 'Ubicación seleccionada';
+
+      // Extraer el nombre del remitente (viene dentro de las etiquetas <b>)
+      const nameMatch = content.match(/<b>(.*?)<\/b>:/);
+      const senderName = nameMatch ? nameMatch[1] : 'El cliente';
+
+      if (mapUrl) {
+        // Construimos la tarjeta con el botón clickeable
+        const card = CardFactory.heroCard(
+          '📍 Ubicación Compartida',
+          [], // Sin imagen de previsualización
+          [{ type: 'openUrl', title: '🗺️ Abrir en Google Maps', value: mapUrl }]
+        );
+
+        return {
+          text: `<b>${senderName}:</b> Ha compartido una ubicación.`,
+          attachment: card
+        };
+      }
+    }
+    
+    // Si no es una ubicación, devolvemos el texto original sin cambios
+    return { text: content };
+  }
+
+  /**
    * Construye un Adaptive Card como alternativa (para casos donde Hero Card no funcione)
    */
   private buildAdaptiveCardForMedia(
@@ -199,7 +237,7 @@ export class GraphService implements OnModuleInit {
     // Encabezado del hilo
     const rootActivity = {
       type: 'message',
-      text: `👤 <b>Cliente:</b> ${userName}<br>📱 <b>WhatsApp:</b> +${userPhone}<br>🟢 <b>Estado:</b> Nuevo Chat`,
+      text: `👤 <b>Cliente:</b> ${userName}<br>📱 <b>WhatsApp:</b> +${userPhone}`,
       textFormat: 'xml',
     };
 
@@ -246,6 +284,9 @@ export class GraphService implements OnModuleInit {
   ) {
     await new Promise((r) => setTimeout(r, 500)); // Pequeña pausa
 
+    // Procesar el contenido por si es una ubicación
+    const processedContent = this.formatLocationCard(content);
+
     const replyActivity: Partial<Activity> = {
       type: 'message',
       text: content,
@@ -253,9 +294,17 @@ export class GraphService implements OnModuleInit {
       attachments: [],
     };
 
+    // Agregar la tarjeta de ubicación si se generó
+    if (processedContent.attachment) {
+      replyActivity.attachments!.push(processedContent.attachment);
+    }
+
     // Agregar media si existe
     if (mimetype && (mediaUrl || base64Data)) {
       this.logger.log(`📎 Adjuntando media: ${mimetype} - ${base64Data ? 'base64' : mediaUrl}`);
+
+      // Ajustamos para no repetir el texto si ya enviamos la tarjeta de ubicación
+      const textForMedia = processedContent.attachment ? undefined : processedContent.text;
       
       const { attachment } = this.buildMediaAttachment(mediaUrl || '', mimetype, fileName, content, base64Data);
       if (attachment) {
@@ -288,12 +337,20 @@ export class GraphService implements OnModuleInit {
       this.appId,
       conversationReference as any,
       async (context) => {
+        //Procesar el contenido por si es una ubicación
+        const processedContent = this.formatLocationCard(content);
+
         const replyActivity: Partial<Activity> = {
           type: 'message',
           text: content,
           textFormat: 'xml',
           attachments: [],
         };
+
+        // Agregar la tarjeta de ubicación si se generó
+        if (processedContent.attachment) {
+          replyActivity.attachments!.push(processedContent.attachment);
+        }
 
         // Agregar media si existe
         if (mimetype && (mediaUrl || base64Data)) {
