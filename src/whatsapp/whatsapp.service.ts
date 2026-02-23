@@ -98,7 +98,7 @@ export class WhatsappService {
           mediaResult?.publicUrl,
           mediaResult?.mimetype,
           mediaResult?.fileName,
-          mediaResult?.base64Data, // Pasar base64 para mejor compatibilidad
+          mediaResult?.base64Data,
         );
       } else {
         // Crear nuevo hilo
@@ -109,7 +109,7 @@ export class WhatsappService {
           mediaResult?.publicUrl,
           mediaResult?.mimetype,
           mediaResult?.fileName,
-          mediaResult?.base64Data, // Pasar base64 para mejor compatibilidad
+          mediaResult?.base64Data,
         );
 
         // Guardar la nueva conversación

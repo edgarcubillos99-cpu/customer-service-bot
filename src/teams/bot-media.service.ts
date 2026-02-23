@@ -15,12 +15,6 @@ export class BotMediaService {
 
   constructor(private readonly httpService: HttpService) {}
 
-  /**
-   * Descarga todos los archivos adjuntos de un mensaje de Teams
-   * NOTA: Las imágenes pegadas directamente en Teams tienen URLs protegidas
-   * que no se pueden descargar fácilmente. Solo funcionan archivos adjuntados
-   * con el botón de "Adjuntar".
-   */
   async downloadAllAttachments(turnContext: TurnContext): Promise<DownloadedAttachment[]> {
     const activity = turnContext.activity;
     const attachments: DownloadedAttachment[] = [];
@@ -29,66 +23,106 @@ export class BotMediaService {
       return attachments;
     }
 
+    // 1. EXTRAER EL TOKEN DEL BOT: Vital para descargar imágenes nativas y recursos protegidos
+    let botToken = '';
+    try {
+      const connectorClient = turnContext.turnState.get(turnContext.adapter.ConnectorClientKey);
+      if (connectorClient && connectorClient.credentials) {
+         botToken = await connectorClient.credentials.getToken();
+      }
+    } catch (err) {
+      this.logger.warn('No se pudo obtener el token del bot del contexto.');
+    }
+
     for (const attachment of activity.attachments) {
-      // Ignorar cards y tipos no descargables
+      // Ignorar únicamente Adaptive Cards y tarjetas UI puras
       if (this.isNonFileAttachment(attachment)) {
         continue;
       }
 
-      // Solo procesar FileDownloadInfo (archivos adjuntados con el botón)
+      let downloaded: DownloadedAttachment | null = null;
+
+      // 2A. CASO DOCUMENTOS/PDFs: Archivos subidos al canal (SharePoint/OneDrive info)
       if (attachment.contentType === 'application/vnd.microsoft.teams.file.download.info') {
-        const downloaded = await this.downloadFileAttachment(attachment);
-        if (downloaded) {
-          attachments.push(downloaded);
-        }
+         downloaded = await this.downloadTeamsFile(attachment);
+      }
+      // 2B. CASO IMÁGENES: Imágenes pegadas directamente en el chat
+      else if (attachment.contentType.startsWith('image/') || attachment.contentUrl) {
+         downloaded = await this.downloadInlineAttachment(attachment, botToken);
+      }
+
+      if (downloaded) {
+        attachments.push(downloaded);
       }
     }
 
     return attachments;
   }
 
-  /**
-   * Descarga un archivo adjunto que viene como FileDownloadInfo
-   */
-  private async downloadFileAttachment(attachment: Attachment): Promise<DownloadedAttachment | null> {
+  private async downloadTeamsFile(attachment: Attachment): Promise<DownloadedAttachment | null> {
     try {
       const downloadInfo = attachment.content as { downloadUrl?: string; name?: string };
       const url = downloadInfo?.downloadUrl;
-      const fileName = attachment.name || downloadInfo?.name || 'archivo';
+      const fileName = attachment.name || downloadInfo?.name || `documento_${Date.now()}.pdf`;
 
-      if (!url) {
-        this.logger.warn(`Adjunto sin URL de descarga: ${fileName}`);
-        return null;
+      if (!url) return null;
+
+      this.logger.log(`📥 Descargando archivo PDF/Doc de Teams: ${fileName}`);
+
+      // Generalmente downloadUrl ya viene pre-autenticado
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          responseType: 'arraybuffer',
+          timeout: 45000, // Aumentamos el timeout para PDFs pesados
+        }),
+      );
+
+      return {
+        buffer: Buffer.from(response.data),
+        contentType: attachment.contentType !== 'application/vnd.microsoft.teams.file.download.info' 
+                      ? attachment.contentType 
+                      : this.inferMimeType(fileName) || 'application/octet-stream',
+        name: fileName,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error descargando archivo de Teams: ${error.message}`);
+      return null;
+    }
+  }
+
+  private async downloadInlineAttachment(attachment: Attachment, token: string): Promise<DownloadedAttachment | null> {
+    try {
+      const url = attachment.contentUrl;
+      if (!url) return null;
+
+      const fileName = attachment.name || `imagen_${Date.now()}.jpg`;
+      this.logger.log(`🖼️ Descargando imagen inline: ${fileName}`);
+
+      const headers: Record<string, string> = {};
+      // Inyectar el token OAuth del bot para brincar la seguridad de Teams
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`; 
       }
-
-      this.logger.log(`Descargando archivo de Teams: ${fileName}`);
 
       const response = await firstValueFrom(
         this.httpService.get(url, {
+          headers,
           responseType: 'arraybuffer',
           timeout: 30000,
         }),
       );
 
-      const buffer = Buffer.from(response.data);
-      const contentType = attachment.contentType || this.inferMimeType(fileName);
-
-      this.logger.log(`✅ Archivo descargado: ${fileName} (${buffer.length} bytes)`);
-
       return {
-        buffer,
-        contentType,
+        buffer: Buffer.from(response.data),
+        contentType: attachment.contentType || this.inferMimeType(fileName) || 'image/jpeg',
         name: fileName,
       };
     } catch (error: any) {
-      this.logger.error(`Error descargando archivo de Teams: ${error.message}`);
+      this.logger.error(`❌ Error descargando adjunto inline: ${error.message}`);
       return null;
     }
   }
 
-  /**
-   * Infiere el MIME type basándose en la extensión
-   */
   private inferMimeType(fileName: string): string {
     const ext = fileName.split('.').pop()?.toLowerCase();
     const mimeTypes: Record<string, string> = {
@@ -108,9 +142,6 @@ export class BotMediaService {
     return mimeTypes[ext || ''] || 'application/octet-stream';
   }
 
-  /**
-   * Verifica si el attachment no es un archivo descargable
-   */
   private isNonFileAttachment(attachment: Attachment): boolean {
     const nonFileTypes = [
       'application/vnd.microsoft.card.adaptive',
@@ -118,7 +149,7 @@ export class BotMediaService {
       'application/vnd.microsoft.card.thumbnail',
       'application/vnd.microsoft.card.signin',
       'text/html',
-      'image/*', // Imágenes inline no son descargables fácilmente
+      // ¡ELIMINAMOS 'image/*' de aquí para permitir que pasen las imágenes!
     ];
     return nonFileTypes.some(type => 
       attachment.contentType === type || 
