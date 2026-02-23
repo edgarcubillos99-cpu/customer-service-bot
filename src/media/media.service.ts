@@ -49,6 +49,11 @@ export class MediaService {
    * Guarda un archivo multimedia en la base de datos
    */
   async saveMedia(dto: SaveMediaDto): Promise<MediaResult> {
+    // Sanitizar el mimetype comodín de Teams desde la entrada
+    let safeMimetype = dto.mimetype;
+    if (safeMimetype === 'image/*') {
+      safeMimetype = 'image/jpeg';
+    }
     // Verificar si ya existe por waMediaId para evitar duplicados
     if (dto.waMediaId) {
       const existing = await this.mediaRepository.findOne({
@@ -62,14 +67,17 @@ export class MediaService {
 
     const media = this.mediaRepository.create({
       ...dto,
+      mimetype: safeMimetype,
       size: dto.data.length,
     });
 
     const saved = await this.mediaRepository.save(media);
-    this.logger.log(`Media guardado: ID=${saved.id}, tipo=${dto.mimetype}, tamaño=${dto.data.length} bytes`);
+    this.logger.log(`Media guardado: ID=${saved.id}, tipo=${safeMimetype}, tamaño=${dto.data.length} bytes`);
     
     return this.toMediaResult(saved);
   }
+
+  
 
   /**
    * Obtiene un archivo por su ID
@@ -167,7 +175,11 @@ export class MediaService {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
     };
 
-    const ext = extensions[mimetype] || mimetype.split('/')[1] || 'bin';
+    let ext = extensions[mimetype] || mimetype.split('/')[1] || 'bin';
+    if (ext === '*') {
+      ext = 'jpg';
+    }
+
     return `archivo_${timestamp}.${ext}`;
   }
 
@@ -259,15 +271,21 @@ export class MediaService {
    */
   private async uploadToWhatsApp(data: Buffer, mimetype: string): Promise<string | null> {
     try {
+      // 🛠️ SANITIZACIÓN: WhatsApp rechaza el comodín 'image/*'. 
+      // Lo transformamos en un mime válido que Meta sí acepta.
+      let safeMimeType = mimetype;
+      if (safeMimeType === 'image/*') {
+        safeMimeType = 'image/jpeg';
+      }
       const FormData = (await import('form-data')).default;
       const formData = new FormData();
       
       formData.append('file', data, {
-        contentType: mimetype,
-        filename: this.generateFileName(mimetype),
+        contentType: safeMimeType,
+        filename: this.generateFileName(safeMimeType),
       });
       formData.append('messaging_product', 'whatsapp');
-      formData.append('type', mimetype);
+      formData.append('type', safeMimeType);
 
       const url = `https://graph.facebook.com/v18.0/${this.whatsappPhoneId}/media`;
       
@@ -282,7 +300,8 @@ export class MediaService {
 
       return response.data.id;
     } catch (error: any) {
-      this.logger.error(`Error subiendo media a WhatsApp:`, error.message);
+      const metaErrorDetail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+      this.logger.error(`❌ Error subiendo media a WhatsApp: ${metaErrorDetail}`);
       return null;
     }
   }
@@ -299,7 +318,7 @@ export class MediaService {
   }
 
   /**
-   * Limpia archivos antiguos (más de X días)
+   * Limpia archivos antiguos (más de 30 días)
    * Útil para mantenimiento de la BD
    */
   async cleanOldMedia(daysOld: number = 30): Promise<number> {

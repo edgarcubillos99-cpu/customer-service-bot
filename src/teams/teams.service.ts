@@ -94,11 +94,18 @@ export class TeamsService {
           });
 
           // Enviar a WhatsApp
-          const sent = await this.mediaService.sendMediaToWhatsApp(
-            conversation.waPhoneNumber,
-            savedMedia.id,
-            text || undefined, // Usar el texto como caption si existe
-          );
+          const caption = text && text.trim() !== '' ? text : undefined;
+          
+          let sent = false;
+          try {
+            sent = await this.mediaService.sendMediaToWhatsApp(
+              conversation.waPhoneNumber,
+              savedMedia.id,
+              caption
+            );
+          } catch (e: any) {
+             this.logger.error(`Error crítico enviando media: ${e.message}`);
+          }
 
           if (sent) {
             this.logger.log(`✅ Archivo enviado a WhatsApp: ${attachment.name}`);
@@ -107,7 +114,7 @@ export class TeamsService {
             this.logger.warn(`⚠️ No se pudo enviar el archivo a WhatsApp, enviando texto`);
             await this.whatsappService.sendMessage(
               conversation.waPhoneNumber,
-              `[${senderName}] envió un archivo: ${attachment.name}`,
+              `[${senderName}] te envió un archivo, pero no pudo ser entregado. Archivo: ${attachment.name}`,
             );
           }
         }
@@ -142,16 +149,21 @@ export class TeamsService {
    * Limpia el texto que viene de Teams (quita etiquetas HTML como <at>Bot</at>)
    */
   private extractText(activity: any): string {
-    let text = activity.text || '';
+    if (!activity.text) return '';
+    let text = activity.text
 
-    // Quitar menciones al bot
-    text = text.replace(/<at>.*?<\/at>/g, '');
-    // Quitar HTML tags
+    // 1. Decodificar entidades HTML básicas que Teams suele inyectar
+    text = text.replace(/&nbsp;/g, ' ');
+    text = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+    // 2. Quitar menciones al bot (soporta atributos dinámicos como <at id="0">)
+    text = text.replace(/<at[^>]*>.*?<\/at>/gi, '');
+
+    // 3. Quitar cualquier otra etiqueta HTML (<p>, <div>, <img>, etc)
     text = text.replace(/<[^>]*>?/gm, '');
-    // Quitar espacios extra
-    text = text.replace(/\s+/g, ' ');
-    text = text.trim();
 
-    return text;
+    // 4. Quitar espacios extra y limpiar
+    text = text.replace(/\s+/g, ' ');
+    return text.trim();
   }
 }
