@@ -5,6 +5,8 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { MediaAttachment } from '../common/entities/media-attachment.entity';
+import { FileSecurityService } from '../security/file-security.service';
+import { FileSecurityBlockedError } from '../security/file-security-blocked.error';
 
 export interface SaveMediaDto {
   waMediaId?: string;
@@ -39,6 +41,7 @@ export class MediaService {
     private readonly mediaRepository: Repository<MediaAttachment>,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly fileSecurityService: FileSecurityService,
   ) {
     this.whatsappToken = this.configService.get<string>('whatsappToken') ?? '';
     this.whatsappPhoneId = this.configService.get<string>('whatsappPhoneId') ?? '';
@@ -46,9 +49,24 @@ export class MediaService {
   }
 
   /**
-   * Guarda un archivo multimedia en la base de datos
+   * Guarda un archivo multimedia en la base de datos.
+   * Valida contra ejecutables y malware (blocklist MIME/extensión + ClamAV si está habilitado).
+   * @throws FileSecurityBlockedError si el archivo no está permitido
    */
   async saveMedia(dto: SaveMediaDto): Promise<MediaResult> {
+    const checkResult = await this.fileSecurityService.check(
+      dto.data,
+      dto.mimetype,
+      dto.fileName,
+    );
+    if (!checkResult.allowed) {
+      throw new FileSecurityBlockedError(
+        checkResult.reason ?? 'Archivo no permitido',
+        checkResult.reason ?? 'Archivo bloqueado por seguridad',
+        checkResult.viruses,
+      );
+    }
+
     // Sanitizar el mimetype comodín de Teams desde la entrada
     let safeMimetype = dto.mimetype;
     if (safeMimetype === 'image/*') {

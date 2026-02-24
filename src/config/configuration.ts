@@ -10,4 +10,11 @@ export default () => ({
   teamsTeamId: process.env.TEAMS_TEAM_ID,
   teamsBotName: process.env.TEAMS_BOT_NAME ?? 'botito',
   publicUrl: process.env.PUBLIC_URL,
+  // ClamAV (opcional): ENABLE_CLAMAV=true para escanear archivos
+  ENABLE_CLAMAV: process.env.ENABLE_CLAMAV,
+  CLAMAV_USE_DAEMON: process.env.CLAMAV_USE_DAEMON,
+  CLAMAV_SOCKET: process.env.CLAMAV_SOCKET,
+  CLAMAV_HOST: process.env.CLAMAV_HOST,
+  CLAMAV_PORT: process.env.CLAMAV_PORT ? parseInt(process.env.CLAMAV_PORT, 10) : undefined,
+  CLAMAV_PATH: process.env.CLAMAV_PATH,
 });

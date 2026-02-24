@@ -7,6 +7,7 @@ import { MediaAttachment } from './common/entities/media-attachment.entity';
 import { TeamsModule } from './teams/teams.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { MediaModule } from './media/media.module';
+import { SecurityModule } from './security/security.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
@@ -23,6 +24,7 @@ import configuration from './config/configuration';
     TeamsModule,
     WhatsappModule,
     MediaModule,
+    SecurityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -8,6 +8,8 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
 import { BotMediaService } from './bot-media.service';
 import { MediaService } from '../media/media.service';
+import { FileSecurityBlockedError } from '../security/file-security-blocked.error';
+import { GraphService } from './graph.service';
 
 @Injectable()
 export class TeamsService {
@@ -21,6 +23,7 @@ export class TeamsService {
     private readonly configService: ConfigService,
     private readonly botMediaService: BotMediaService,
     private readonly mediaService: MediaService,
+    private readonly graphService: GraphService,
   ) {
     this.botName = this.configService.get<string>('teamsBotName') ?? 'botito';
   }
@@ -78,20 +81,40 @@ export class TeamsService {
       // 4. Procesar adjuntos si existen
       const attachments = await this.botMediaService.downloadAllAttachments(context);
 
+      // Notificar solo si había un archivo real (no text/html del cuerpo) y ninguno se pudo procesar
+      const hasRealFileAttachment = activity.attachments?.some(
+        (a: { contentType?: string }) => a.contentType !== 'text/html'
+      ) ?? false;
+      if (hasRealFileAttachment && attachments.length === 0) {
+        await this.notifyErrorInTeams(threadId, 'archivo');
+      }
+
       if (attachments.length > 0) {
         // Procesar cada adjunto
         for (const attachment of attachments) {
           this.logger.log(`📎 Procesando adjunto de Teams: ${attachment.name} (${attachment.contentType})`);
 
-          // Guardar en nuestra BD
-          const savedMedia = await this.mediaService.saveMedia({
-            teamsAttachmentId: `${messageId}_${attachment.name}`,
-            conversationId: conversation.id,
-            mimetype: attachment.contentType,
-            fileName: attachment.name,
-            data: attachment.buffer,
-            source: 'teams',
-          });
+          let savedMedia;
+          try {
+            savedMedia = await this.mediaService.saveMedia({
+              teamsAttachmentId: `${messageId}_${attachment.name}`,
+              conversationId: conversation.id,
+              mimetype: attachment.contentType,
+              fileName: attachment.name,
+              data: attachment.buffer,
+              source: 'teams',
+            });
+          } catch (err: any) {
+            if (err instanceof FileSecurityBlockedError) {
+              this.logger.warn(`🚫 Archivo bloqueado: ${attachment.name} - ${err.reason}`);
+              await this.whatsappService.sendMessage(
+                conversation.waPhoneNumber,
+                `[${senderName}] intentó enviar un archivo que fue bloqueado por seguridad. ${err.reason}`,
+              );
+              continue;
+            }
+            throw err;
+          }
 
           // Enviar a WhatsApp
           const caption = text && text.trim() !== '' ? text : undefined;
@@ -116,6 +139,7 @@ export class TeamsService {
               conversation.waPhoneNumber,
               `[${senderName}] te envió un archivo, pero no pudo ser entregado. Archivo: ${attachment.name}`,
             );
+            await this.notifyErrorInTeams(threadId, 'archivo');
           }
         }
 
@@ -123,13 +147,22 @@ export class TeamsService {
         if (text && attachments.length === 1) {
           // Ya se envió como caption, no duplicar
         } else if (text && attachments.length > 1) {
-          // Múltiples adjuntos, enviar texto por separado
-          await this.whatsappService.sendMessage(conversation.waPhoneNumber, text);
+          try {
+            await this.whatsappService.sendMessage(conversation.waPhoneNumber, text);
+          } catch (e: any) {
+            this.logger.error(`Error enviando texto a WhatsApp: ${e.message}`);
+            await this.notifyErrorInTeams(threadId, 'mensaje');
+          }
         }
       } else if (text) {
         // Solo texto, sin adjuntos
-        await this.whatsappService.sendMessage(conversation.waPhoneNumber, text);
-        this.logger.log(`✅ Mensaje de texto enviado a WhatsApp: ${conversation.waPhoneNumber}`);
+        try {
+          await this.whatsappService.sendMessage(conversation.waPhoneNumber, text);
+          this.logger.log(`✅ Mensaje de texto enviado a WhatsApp: ${conversation.waPhoneNumber}`);
+        } catch (e: any) {
+          this.logger.error(`Error enviando mensaje a WhatsApp: ${e.message}`);
+          await this.notifyErrorInTeams(threadId, 'mensaje');
+        }
       }
 
       // 5. Guardar mensaje en BD
@@ -142,6 +175,20 @@ export class TeamsService {
       });
     } catch (error: any) {
       this.logger.error(`❌ Error procesando mensaje de Teams: ${error.message}`);
+    }
+  }
+
+  /**
+   * Notifica en el hilo de Teams que hubo un error al enviar a WhatsApp (para que el operador lo vea).
+   */
+  private async notifyErrorInTeams(threadId: string, tipo: 'archivo' | 'mensaje'): Promise<void> {
+    try {
+      const msg = tipo === 'archivo'
+        ? '⚠️ Archivo no enviado a WhatsApp.'
+        : '⚠️ Mensaje no enviado a WhatsApp.';
+      await this.graphService.replyToThread(threadId, msg);
+    } catch (e: any) {
+      this.logger.warn(`No se pudo notificar error en Teams: ${e.message}`);
     }
   }
 

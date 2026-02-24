@@ -12,6 +12,7 @@ import { Observable } from 'rxjs';
 import { Conversation } from '../common/entities/conversation.entity';
 import { GraphService } from '../teams/graph.service';
 import { MediaService } from '../media/media.service';
+import { FileSecurityBlockedError } from '../security/file-security-blocked.error';
 
 @Injectable()
 export class WhatsappService {
@@ -58,25 +59,34 @@ export class WhatsappService {
       if (mediaId) {
         this.logger.log(`📎 Procesando archivo: ${mimetype} - ${fileName || 'sin nombre'}`);
         
-        const result = await this.mediaService.downloadAndSaveFromWhatsApp(
-          mediaId,
-          mimetype,
-          fileName,
-          caption,
-          conversation?.id,
-        );
+        try {
+          const result = await this.mediaService.downloadAndSaveFromWhatsApp(
+            mediaId,
+            mimetype,
+            fileName,
+            caption,
+            conversation?.id,
+          );
 
-        if (result) {
-          mediaResult = {
-            id: result.id,
-            publicUrl: result.publicUrl,
-            mimetype: result.mimetype,
-            fileName: result.fileName,
-            base64Data: result.base64Data, // Incluir base64 para Teams
-          };
-          this.logger.log(`✅ Archivo guardado: ID=${result.id}, URL=${result.publicUrl}, base64=${result.base64Data ? 'sí' : 'no'}`);
-        } else {
-          this.logger.warn(`⚠️ No se pudo descargar el archivo de WhatsApp`);
+          if (result) {
+            mediaResult = {
+              id: result.id,
+              publicUrl: result.publicUrl,
+              mimetype: result.mimetype,
+              fileName: result.fileName,
+              base64Data: result.base64Data, // Incluir base64 para Teams
+            };
+            this.logger.log(`✅ Archivo guardado: ID=${result.id}, URL=${result.publicUrl}, base64=${result.base64Data ? 'sí' : 'no'}`);
+          } else {
+            this.logger.warn(`⚠️ No se pudo descargar el archivo de WhatsApp`);
+          }
+        } catch (err: any) {
+          if (err instanceof FileSecurityBlockedError) {
+            this.logger.warn(`🚫 Archivo de WhatsApp bloqueado por seguridad: ${err.reason}`);
+            // No se envía el archivo a Teams; se puede seguir enviando el texto/caption si hay
+          } else {
+            throw err;
+          }
         }
       }
 
