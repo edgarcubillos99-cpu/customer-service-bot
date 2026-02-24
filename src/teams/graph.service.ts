@@ -218,58 +218,118 @@ export class GraphService implements OnModuleInit {
     return null;
   }
 
-  /**
-   * Crea un nuevo hilo en Teams con un "Ticket" de cabecera
+/**
+   * Crea un nuevo hilo en Teams con un "Ticket" de cabecera usando Adaptive Cards
    */
-  async sendMessageToChannel(
-    userName: string,
-    userPhone: string,
-    content: string,
-    mediaUrl?: string,
-    mimetype?: string,
-    fileName?: string,
-    base64Data?: string,
-  ): Promise<{ id: string }> {
-    const channelId = this.configService.get<string>('teamsChannelId');
-    const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
-    const serviceUrl = 'https://smba.trafficmanager.net/amer/';
+async sendMessageToChannel(
+  userName: string,
+  userPhone: string,
+  content: string,
+  mediaUrl?: string,
+  mimetype?: string,
+  fileName?: string,
+  base64Data?: string,
+): Promise<{ id: string }> {
+  const channelId = this.configService.get<string>('teamsChannelId');
+  const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
+  const serviceUrl = 'https://smba.trafficmanager.net/amer/';
 
-    // Encabezado del hilo
-    const rootActivity = {
-      type: 'message',
-      text: `👤 <b>Cliente:</b> ${userName}<br>📱 <b>WhatsApp:</b> +${userPhone}`,
-      textFormat: 'xml',
-    };
-
-    const conversationParameters = {
-      isGroup: true,
-      channelData: {
-        channel: { id: channelId },
-        tenant: { id: tenantId },
+  // 1. Crear el diseño estético de la tarjeta (Adaptive Card)
+  const ticketCard = CardFactory.adaptiveCard({
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.4',
+    body: [
+      {
+        type: 'Container',
+        style: 'good', // Le da un fondo de acento (usualmente verde/azul claro)
+        bleed: true,
+        items: [
+          {
+            type: 'ColumnSet',
+            columns: [
+              {
+                type: 'Column',
+                width: 'auto',
+                items: [
+                  {
+                    type: 'Image',
+                    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/120px-WhatsApp.svg.png',
+                    size: 'Small',
+                    altText: 'WhatsApp Logo'
+                  }
+                ]
+              },
+              {
+                type: 'Column',
+                width: 'stretch',
+                items: [
+                  {
+                    type: 'TextBlock',
+                    text: 'Nueva Conversación de WhatsApp',
+                    weight: 'Bolder',
+                    size: 'Medium',
+                    color: 'Dark'
+                  },
+                  {
+                    type: 'TextBlock',
+                    text: 'Canal de Atención al Cliente',
+                    isSubtle: true,
+                    spacing: 'None',
+                    size: 'Small'
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
-      activity: rootActivity,
-    } as ConversationParameters;
+      {
+        type: 'FactSet', // Crea una tabla clave-valor muy limpia
+        spacing: 'Medium',
+        facts: [
+          { title: '👤 Cliente:', value: userName || 'Desconocido' },
+          { title: '📱 Número:', value: `+${userPhone}` },
+        ]
+      }
+    ]
+  });
 
-    let newConversationId = '';
+  // 2. Adjuntar la tarjeta como la actividad principal del hilo
+  const rootActivity: Partial<Activity> = {
+    type: 'message',
+    attachments: [ticketCard],
+  };
 
-    await this.adapter.createConversationAsync(
-      this.appId,
-      Channels.Msteams,
-      serviceUrl,
-      '',
-      conversationParameters,
-      async (context) => {
-        const ref = TurnContext.getConversationReference(context.activity);
-        newConversationId = ref.conversation?.id || '';
-        this.logger.log(`✅ Hilo creado. ID: ${newConversationId}`);
+  const conversationParameters = {
+    isGroup: true,
+    channelData: {
+      channel: { id: channelId },
+      tenant: { id: tenantId },
+    },
+    activity: rootActivity,
+  } as ConversationParameters;
 
-        // Enviar el mensaje del cliente
-        await this.replyToThreadInternal(context, content, mediaUrl, mimetype, fileName, base64Data);
-      },
-    );
+  let newConversationId = '';
 
-    return { id: newConversationId };
-  }
+  await this.adapter.createConversationAsync(
+    this.appId,
+    Channels.Msteams,
+    serviceUrl,
+    '',
+    conversationParameters,
+    async (context) => {
+      const ref = TurnContext.getConversationReference(context.activity);
+      newConversationId = ref.conversation?.id || '';
+      this.logger.log(`✅ Hilo creado. ID: ${newConversationId}`);
+
+      // Enviar el mensaje del cliente inicial dentro de este nuevo hilo
+      await this.replyToThreadInternal(context, content, mediaUrl, mimetype, fileName, base64Data);
+    },
+  );
+
+  return { id: newConversationId };
+}
 
   /**
    * Helper interno para responder dentro de createConversationAsync
@@ -287,9 +347,14 @@ export class GraphService implements OnModuleInit {
     // Procesar el contenido por si es una ubicación
     const processedContent = this.formatLocationCard(content);
 
+    // Si vamos a enviar una tarjeta (ubicación o archivo), no enviar el texto plano para evitar duplicado
+    const hasLocationCard = !!processedContent.attachment;
+    const willHaveMediaCard = !!(mimetype && (mediaUrl || base64Data));
+    const textToSend = hasLocationCard || willHaveMediaCard ? '' : content;
+
     const replyActivity: Partial<Activity> = {
       type: 'message',
-      text: content,
+      text: textToSend,
       textFormat: 'xml',
       attachments: [],
     };
@@ -303,7 +368,6 @@ export class GraphService implements OnModuleInit {
     if (mimetype && (mediaUrl || base64Data)) {
       this.logger.log(`📎 Adjuntando media: ${mimetype} - ${base64Data ? 'base64' : mediaUrl}`);
 
-      // Ajustamos para no repetir el texto si ya enviamos la tarjeta de ubicación
       const textForMedia = processedContent.attachment ? undefined : processedContent.text;
       
       const { attachment } = this.buildMediaAttachment(mediaUrl || '', mimetype, fileName, content, base64Data);
@@ -340,9 +404,14 @@ export class GraphService implements OnModuleInit {
         //Procesar el contenido por si es una ubicación
         const processedContent = this.formatLocationCard(content);
 
+        // Si vamos a enviar una tarjeta (ubicación o archivo), no enviar el texto plano para evitar duplicado
+        const hasLocationCard = !!processedContent.attachment;
+        const willHaveMediaCard = !!(mimetype && (mediaUrl || base64Data));
+        const textToSend = hasLocationCard || willHaveMediaCard ? '' : content;
+
         const replyActivity: Partial<Activity> = {
           type: 'message',
-          text: content,
+          text: textToSend,
           textFormat: 'xml',
           attachments: [],
         };
