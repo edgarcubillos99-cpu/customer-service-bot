@@ -17,7 +17,7 @@ import configuration from './config/configuration';
     ConfigModule.forRoot({ load: [configuration], isGlobal: true }),
     TypeOrmModule.forRoot({
       type: 'sqlite',
-      database: 'database.sqlite',
+      database: 'data/database.sqlite',
       entities: [Conversation, Message, MediaAttachment],
       synchronize: true, // Crea las tablas automáticamente (solo para desarrollo)
     }),

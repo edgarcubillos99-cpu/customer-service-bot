@@ -1,0 +1,31 @@
+services:
+  bot-app:
+    build: .
+    container_name: customer_service_bot
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - CLAMAV_HOST=clamav-service
+      - CLAMAV_PORT=3310
+    depends_on:
+      - clamav-service
+    volumes:
+      - ./data:/app/data  # Guarda la DB fuera del contenedor
+    networks:
+      - bot-network
+
+  clamav-service:
+    image: clamav/clamav:latest
+    container_name: bot_clamav
+    restart: always
+    ports:
+      - "3310:3310"
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
