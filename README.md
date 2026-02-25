@@ -1,98 +1,453 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+🤖 Omni-Channel Bot Backend – WhatsApp + Teams + NestJS
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://docker.com)
+[![Status](https://img.shields.io/badge/Production_Ready-Yes-brightgreen)]()
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+```plaintext
+Sistema backend corporativo para atención omnicanal, con:
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+✅ Webhook de recepción bidireccional Meta API / Teams
+✅ Integración proactiva con Microsoft Graph y Bot Framework
+✅ Escaneo de seguridad (ClamAV) contra malware en adjuntos
+✅ Persistencia de sesiones relacionales con TypeORM + SQLite
+✅ Descarga, conversión y publicación de archivos multimedia
+✅ Docker y Docker Compose listos para producción
 ```
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ npm run start
+# 📑 Índice
 
-# watch mode
-$ npm run start:dev
+    🤖 Omni-Channel Bot Backend – WhatsApp + Teams + NestJS
 
-# production mode
-$ npm run start:prod
+    📑 Índice
+
+    🔎 Descripción General
+
+    📁 Estructura del Proyecto
+
+    🏗 Arquitectura del Sistema
+
+    ⚙️ Configuración del Entorno
+
+    ☁️ Configuración en Azure y Teams
+
+    🐳 Ejecución con Docker
+
+    🧩 Diseño del Sistema
+
+    💾 Modelo de Datos
+
+    ⚠️ Reglas de Sesión y Enrutamiento
+
+    🧪 Pruebas y Verificación
+
+    🚨 Troubleshooting
+
+---
+
+# 🔎 Descripción General
+
+Este servicio actúa como un intermediario (Middleware) orquestador entre clientes finales comunicándose por WhatsApp y operadores de soporte o agentes de Microsoft Teams.
+
+El sistema recibe un mensaje vía el webhook de Meta, evalúa si el usuario ya posee una sesión activa y, de ser así, inyecta el mensaje al hilo correspondiente en Teams. Si existen archivos multimedia, pasan previamente por un servicio antivirus en contenedor antes de ser expuestos en Teams. Las respuestas nativas del agente en Microsoft Teams son captadas por el Azure Bot Service y reenviadas transparentemente al número original de WhatsApp.
+
+---
+
+# 📁 Estructura del Proyecto
+
+```plaintext
+
+Bot-Manage-Messages-Whasapp-Teams/
+├── src/
+│   ├── app.module.ts
+│   ├── common/                 → Entidades (Conversation, Message, Media)
+│   ├── config/                 → Variables y validaciones de entorno
+│   ├── conversations/          → Gestión del estado (OPEN/CLOSED)
+│   ├── media/                  → Descarga y procesamiento de archivos WA
+│   ├── messages/               → Prevención de duplicidad e historial
+│   ├── security/               → ClamAV y control de riesgos
+│   ├── teams/                  → Integración de Graph, Bot Framework y webhooks
+│   │   ├── teams-bot.handler.ts→ Escucha de respuestas en los hilos
+│   │   └── graph.service.ts    → Peticiones al canal y manipulación
+│   └── whatsapp/               → Webhooks de Meta y llamadas Graph de WA
+├── data/                       → Volumen para SQLite persistente
+├── env.template
+├── docker-compose.yml
+├── dockerfile
+└── package.json
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+# 🏗 Arquitectura del Sistema
 
-# e2e tests
-$ npm run test:e2e
+```plaintext
+flowchart TD
 
-# test coverage
-$ npm run test:cov
+A[Cliente WhatsApp] <-->|API de Meta| B[WhatsApp Controller]
+B --> C[Validación de Duplicados & Sesión]
+C -->|Adjunto detectado| D[Media Service]
+D -->|Buffer de red| E[ClamAV Container]
+E -->|Limpio| F[Persistencia Base de Datos SQLite]
+E -->|Infectado| X[Bloqueo FileSecurityBlockedError]
+F -->|Nuevo Cliente| G[Graph Service: Crear Hilo Teams]
+F -->|Cliente Existente| H[Graph Service: Responder Hilo Teams]
+I[Operador Teams] -->|Respuesta Bot| J[Teams Bot Handler]
+J --> K[Reenvío a Meta API WhatsApp]
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+# ⚙️ Configuración del Entorno
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+1) Archivo .env
+
+# 💻 Aplicación y Puerto
+PORT=3000
+
+# --------------------------------------------------------
+# 🟢 CREDENCIALES DEL BOT (Azure Bot Service)
+# --------------------------------------------------------
+MICROSOFT_APP_ID=uuid_generado_en_azure_ad
+MICROSOFT_APP_PASSWORD=secreto_generado_en_azure_ad
+MICROSOFT_APP_TENANT_ID=uuid_del_tenant_de_microsoft
+MICROSOFT_APP_TYPE=SingleTenant
+
+# --------------------------------------------------------
+# 🔵 CONFIGURACIÓN DE TEAMS
+# --------------------------------------------------------
+TEAMS_CHANNEL_ID=19:xxxxxxxx@thread.tacv2 # Canal central de recepción
+TEAMS_TEAM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx # ID del grupo de M365
+TEAMS_BOT_NAME=botito
+
+# --------------------------------------------------------
+# 🟢 WHATSAPP API (Meta)
+# --------------------------------------------------------
+WHATSAPP_TOKEN=token_permanente_graph_api
+WHATSAPP_PHONE_ID=id_del_numero_telefonico
+WHATSAPP_VERIFY_TOKEN=token_manual_para_webhook
+
+# --------------------------------------------------------
+# 🛡️ SEGURIDAD
+# --------------------------------------------------------
+CLAMAV_HOST=clamav-service
+CLAMAV_PORT=3310
+
+2) ☁️ Configuración en Azure y Teams
+
+
+Para el correcto funcionamiento del Bot, la infraestructura corporativa debe inicializarse de la siguiente forma:
+
+    Azure Active Directory (App Registration):
+
+        Crear una aplicación de Inquilino Único (Single Tenant).
+
+        Generar el secreto en Certificates & Secrets.
+
+        Consolidar permisos en API Permissions si es necesario para leer archivos de Microsoft Graph.
+
+    Azure Bot (Recurso):
+
+        Enlazar el MICROSOFT_APP_ID.
+
+        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages.
+
+        Agregar el "Canal" de Microsoft Teams a tu Bot de Azure.
+
+    Manifest y MS Teams:
+
+        Usar el Developer Portal de Teams para compilar tu bot y cargarlo en el TEAMS_TEAM_ID.
+
+        El bot debe tener acceso al canal específico indicado en TEAMS_CHANNEL_ID para ser capaz de inyectar hilos proactivos y responder.
+---
+
+# 🐳 Ejecución con Docker
+
+Ejecutar:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+docker compose up --build
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Gemini dijo
 
-## Resources
+He revisado el código de tu proyecto a fondo. Tienes una base arquitectónica muy sólida utilizando NestJS, TypeORM y el Bot Framework de Microsoft, sumado al importante detalle del escaneo de seguridad con ClamAV para los archivos adjuntos.
+🛠️ Evaluación y Optimizaciones Detectadas
 
-Check out a few resources that may come in handy when working with NestJS:
+Como desarrollador senior, he detectado estas oportunidades de mejora en el flujo y código actual:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+    Condiciones de Carrera (Race Conditions) al crear hilos: Si un cliente envía 3 mensajes casi al mismo tiempo (ej. "Hola", "Tengo una duda", "Foto"), tu controlador recibe 3 webhooks en paralelo. Al pasar por findByPhone, la consulta a la base de datos devolverá null para los tres, ya que el primer hilo aún no se ha guardado, resultando en la creación de 3 hilos independientes en Teams.
 
-## Support
+        Optimización: Necesitas implementar un mecanismo de bloqueo (Mutex o Redlock vía Redis) asociado al número de teléfono del cliente durante el procesamiento inicial.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+    Duplicidad limitante en la Caché: Tienes un mecanismo doble para evitar mensajes duplicados. Primero, un Set en memoria en el WhatsappController (processedMessagesCache) y, luego, una consulta en base de datos en WhatsappService (messageExistsByWaId).
 
-## Stay in touch
+        Optimización: La caché en memoria impedirá que la aplicación escale horizontalmente (ej. si usas Kubernetes con múltiples pods). Es mejor delegar la deduplicación a una base de datos rápida como Redis o confiar enteramente en TypeORM/SQLite si el volumen es manejable.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+    Ciclo de vida perpetuo (Falta de TTL): findByPhone busca una conversación donde el status sea 'OPEN'. Sin un mecanismo que cierre la conversación, si un cliente vuelve a escribir 6 meses después, revivirá el mismo hilo en Teams, causando un desorden inmenso para el agente.
 
-## License
+        Optimización: Implementa un CronJob (con @nestjs/schedule) que cierre de manera automática (status = 'CLOSED') las conversaciones tras 24 o 48 horas de inactividad.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+    Manejo silencioso de errores multimedia: Observo que si falla mediaService.downloadAndSaveFromWhatsApp por una razón distinta a FileSecurityBlockedError (ClamAV), se lanza el error (throw err) y el flujo se corta sin notificar en Teams o WhatsApp que el archivo no pudo ser entregado.
+
+    Funciones sin terminar: En ConversationsService se observa el inicio de una función findMost... (seguramente findMostRecent), la cual deberías eliminar si no tiene uso, o finalizar si hace parte del flujo de reconexión de sesiones.
+
+A continuación tienes la documentación de tu proyecto con el formato de referencia solicitado.
+🤖 Omni-Channel Bot Backend – WhatsApp + Teams + NestJS
+Plaintext
+
+Sistema backend corporativo para atención omnicanal, con:
+
+✅ Webhook de recepción bidireccional Meta API / Teams
+✅ Integración proactiva con Microsoft Graph y Bot Framework
+✅ Escaneo de seguridad (ClamAV) contra malware en adjuntos
+✅ Persistencia de sesiones relacionales con TypeORM + SQLite
+✅ Descarga, conversión y publicación de archivos multimedia
+✅ Docker y Docker Compose listos para producción
+
+📑 Índice
+
+    🤖 Omni-Channel Bot Backend – WhatsApp + Teams + NestJS
+
+    📑 Índice
+
+    🔎 Descripción General
+
+    📁 Estructura del Proyecto
+
+    🏗 Arquitectura del Sistema
+
+    ⚙️ Configuración del Entorno
+
+    ☁️ Configuración en Azure y Teams
+
+    🐳 Ejecución con Docker
+
+    🧩 Diseño del Sistema
+
+    💾 Modelo de Datos
+
+    ⚠️ Reglas de Sesión y Enrutamiento
+
+    🧪 Pruebas y Verificación
+
+    🚨 Troubleshooting
+
+🔎 Descripción General
+
+Este servicio actúa como un intermediario (Middleware) orquestador entre clientes finales comunicándose por WhatsApp y operadores de soporte o agentes de Microsoft Teams.
+
+El sistema recibe un mensaje vía el webhook de Meta, evalúa si el usuario ya posee una sesión activa y, de ser así, inyecta el mensaje al hilo correspondiente en Teams. Si existen archivos multimedia, pasan previamente por un servicio antivirus en contenedor antes de ser expuestos en Teams. Las respuestas nativas del agente en Microsoft Teams son captadas por el Azure Bot Service y reenviadas transparentemente al número original de WhatsApp.
+📁 Estructura del Proyecto
+Plaintext
+
+customer-service-bot/
+├── src/
+│   ├── app.module.ts
+│   ├── common/                 → Entidades (Conversation, Message, Media)
+│   ├── config/                 → Variables y validaciones de entorno
+│   ├── conversations/          → Gestión del estado (OPEN/CLOSED)
+│   ├── media/                  → Descarga y procesamiento de archivos WA
+│   ├── messages/               → Prevención de duplicidad e historial
+│   ├── security/               → ClamAV y control de riesgos
+│   ├── teams/                  → Integración de Graph, Bot Framework y webhooks
+│   │   ├── teams-bot.handler.ts→ Escucha de respuestas en los hilos
+│   │   └── graph.service.ts    → Peticiones al canal y manipulación
+│   └── whatsapp/               → Webhooks de Meta y llamadas Graph de WA
+├── data/                       → Volumen para SQLite persistente
+├── env.template
+├── docker-compose.yml
+├── dockerfile
+└── package.json
+
+🏗 Arquitectura del Sistema
+Plaintext
+
+flowchart TD
+
+A[Cliente WhatsApp] <-->|API de Meta| B[WhatsApp Controller]
+B --> C[Validación de Duplicados & Sesión]
+C -->|Adjunto detectado| D[Media Service]
+D -->|Buffer de red| E[ClamAV Container]
+E -->|Limpio| F[Persistencia Base de Datos SQLite]
+E -->|Infectado| X[Bloqueo FileSecurityBlockedError]
+F -->|Nuevo Cliente| G[Graph Service: Crear Hilo Teams]
+F -->|Cliente Existente| H[Graph Service: Responder Hilo Teams]
+I[Operador Teams] -->|Respuesta Bot| J[Teams Bot Handler]
+J --> K[Reenvío a Meta API WhatsApp]
+
+⚙️ Configuración del Entorno
+
+Las variables de entorno requeridas están definidas en .env. A continuación las principales:
+Properties
+
+# 💻 Aplicación y Puerto
+PORT=3000
+
+# --------------------------------------------------------
+# 🟢 CREDENCIALES DEL BOT (Azure Bot Service)
+# --------------------------------------------------------
+MICROSOFT_APP_ID=uuid_generado_en_azure_ad
+MICROSOFT_APP_PASSWORD=secreto_generado_en_azure_ad
+MICROSOFT_APP_TENANT_ID=uuid_del_tenant_de_microsoft
+MICROSOFT_APP_TYPE=SingleTenant
+
+# --------------------------------------------------------
+# 🔵 CONFIGURACIÓN DE TEAMS
+# --------------------------------------------------------
+TEAMS_CHANNEL_ID=19:xxxxxxxx@thread.tacv2 # Canal central de recepción
+TEAMS_TEAM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx # ID del grupo de M365
+TEAMS_BOT_NAME=botito
+
+# --------------------------------------------------------
+# 🟢 WHATSAPP API (Meta)
+# --------------------------------------------------------
+WHATSAPP_TOKEN=token_permanente_graph_api
+WHATSAPP_PHONE_ID=id_del_numero_telefonico
+WHATSAPP_VERIFY_TOKEN=token_manual_para_webhook
+
+# --------------------------------------------------------
+# 🛡️ SEGURIDAD
+# --------------------------------------------------------
+CLAMAV_HOST=clamav-service
+CLAMAV_PORT=3310
+
+☁️ Configuración en Azure y Teams
+
+Para el correcto funcionamiento del Bot, la infraestructura corporativa debe inicializarse de la siguiente forma:
+
+    Azure Active Directory (App Registration):
+
+        Crear una aplicación de Inquilino Único (Single Tenant).
+
+        Generar el secreto en Certificates & Secrets.
+
+        Consolidar permisos en API Permissions si es necesario para leer archivos de Microsoft Graph.
+
+    Azure Bot (Recurso):
+
+        Enlazar el MICROSOFT_APP_ID.
+
+        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages.
+
+        Agregar el "Canal" de Microsoft Teams a tu Bot de Azure.
+
+    Manifest y MS Teams:
+
+        Usar el Developer Portal de Teams para compilar tu bot y cargarlo en el TEAMS_TEAM_ID.
+
+        El bot debe tener acceso al canal específico indicado en TEAMS_CHANNEL_ID para ser capaz de inyectar hilos proactivos y responder.
+
+🐳 Ejecución con Docker
+
+El sistema se orquesta íntegramente gracias a docker-compose.
+Bash
+
+docker compose up -d --build
+
+El proceso:
+
+    Inicia un contenedor de ClamAV (clamav-service) para antivirus de red.
+
+    Inicia el contenedor principal en Node.js cargando las reglas de NestJS.
+
+    El volumen /data de SQLite se expone de forma persistente.
+
+    El puerto 3000 queda expuesto para integraciones de proxy inverso (Nginx) y SSL.
+
+Para ver registros en tiempo real:
+
+```bash
+docker logs -f customer_service_bot
+```
+
+---
+
+# 🧩 Diseño del Sistema
+
+✔ Manejo de Estados (ConversationsService) Se usa la llave de teléfono del cliente (waPhoneNumber) y el status: 'OPEN' para localizar en TypeORM el puntero hacia la conversación actual en Teams (teamsThreadId).
+
+✔ Prevención de Webhook Duplicados Meta reintenta envíos si se excede el TTL o hay pérdida de paquetes. Se mantiene una memoria viva y validación en SQLite (messageExistsByWaId) para dropear solicitudes duplicadas.
+
+✔ Protección con ClamAV (FileSecurityService) A diferencia de retransmisiones ciegas, todo buffer del cliente se interseca. Si detecta malware, lanza un error tipado FileSecurityBlockedError que cancela la inserción a la red corporativa.
+
+✔ Respuestas Inversas (Teams -> WA) El TeamsBotHandler atrapa cualquier actividad type === 'message'. Filtra si el remitente role === 'bot' para evitar ciclos infinitos y luego usa el activity.conversation.id de Teams para rastrear el ID telefónico en la DB y publicar de vuelta a Meta.
+
+---
+
+# 💾 Modelo de Datos en MongoDB
+
+Estructura referencial manejada por TypeORM / SQLite:
+
+```plaintext
+conversations
+{
+  "id": "uuid",
+  "waPhoneNumber": "573000000000",
+  "teamsThreadId": "19:xxx@thread.tacv2;messageid=123",
+  "status": "OPEN", // OPEN | CLOSED
+  "createdAt": "timestamp"
+}
+
+messages
+{
+  "id": "uuid",
+  "conversationId": "uuid_conversacion",
+  "whatsappId": "wamid.xxxxxx",
+  "teamsMessageId": "16542131234",
+  "content": "Hola, necesito soporte",
+  "direction": "INBOUND" // INBOUND | OUTBOUND
+}
+
+media_attachments
+{
+  "id": "uuid",
+  "messageId": "uuid_del_mensaje",
+  "mimetype": "image/jpeg",
+  "fileName": "ticket_12.jpg",
+  "isScanned": true,
+  "publicUrl": "https://midominio.com/media/ticket_12.jpg"
+}
+```
+---
+
+# ⚠️ Reglas de Sesión y Enrutamiento
+Condición de Entrada WhatsApp:
+
+    Si un teléfono ingresa por 1ra vez o su último registro está CLOSED ➡️ Crea Hilo Padre en Teams.
+
+    Si un teléfono tiene un registro OPEN ➡️ Realiza un replyToThread concatenando al hilo existente.
+
+Condición de Entrada Teams:
+
+    Solo se procesan respuestas que provengan dentro de un Hilo. No se leerán mensajes aislados creados por fuera de un teamsThreadId registrado en DB.
+
+Formatos soportados: Texto plano, imágenes (image/jpeg, image/png) y documentos que logren pasar la criba de seguridad.
+
+---
+
+# 🧪 Pruebas y Verificación
+
+✅ Validar Conexión de Webhook (Meta)
+Puedes consultar la validación de suscripción en el navegador o terminal:
+```bash
+curl "http://localhost:3000/whatsapp/webhook?hub.mode=subscribe&hub.challenge=1234&hub.verify_token=[TU_VERIFY_TOKEN]"
+```
+✅ Simular Fallo Antivirus local
+Puedes enviar el estándar antimalware EICAR por WhatsApp al bot para garantizar que caiga en el FileSecurityBlockedError y se bloquee.
+---
+
+# 🚨 Troubleshooting
+❌ "Error de Verificación" / HTTP 403 en WhatsApp
+Asegúrate de que la variable WHATSAPP_VERIFY_TOKEN coincida exactamente con el portal para Desarrolladores de Meta y el túnel HTTPS esté activo.
+
+❌ El bot responde en Teams pero no llega el mensaje al cliente
+El Token permanente (WHATSAPP_TOKEN) puede estar vencido o tu aplicación de Meta está en modo "SandBox/Desarrollo" y estás respondiendo a un teléfono no testeado de la lista blanca.
+
+❌ Aparecen respuestas múltiples del bot / desorden en los hilos
+No se está completando exitosamente el código 200 OK al webhook de Meta lo suficientemente rápido, por ende Meta dispara el webhook nuevamente y tu caché no detecta el ID. Revisa tiempos de respuesta al crear hilos de Teams.
+
+❌ "FileSecurityBlockedError" constante
+El contenedor clamav-service no tiene base de firmas actualizadas o las políticas restringen por extensión general. Verifica los logs del antivirus.
