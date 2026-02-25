@@ -1,4 +1,4 @@
-🤖 Omni-Channel Bot Backend – WhatsApp + Teams + NestJS
+# 🤖 Omni-Channel Bot Backend – WhatsApp + Teams + NestJS
 
 ```plaintext
 Sistema backend corporativo para atención omnicanal, con:
@@ -32,6 +32,8 @@ Sistema backend corporativo para atención omnicanal, con:
     💾 Modelo de Datos
 
     ⚠️ Reglas de Sesión y Enrutamiento
+
+    🛡️ Seguridad (MIME & ClamAV)
 
     🧪 Pruebas y Verificación
 
@@ -74,6 +76,13 @@ Bot-Manage-Messages-Whasapp-Teams/
 ---
 
 # 🏗 Arquitectura del Sistema
+
+<p align="center">
+  <img src="./docs/arquitectura-flujo.jpg" alt="Diagrama de Flujo del Bot Omnicanal" width="850">
+</p>
+<p align="center">
+  <em>Flujo de mensajes bidireccional entre WhatsApp y Microsoft Teams.</em>
+</p>
 
 ```plaintext
 
@@ -134,6 +143,7 @@ IMPORTANTE: Esta URL es necesaria para:
 - Recibir webhooks de Azure Bot y WhatsApp
 - Servir archivos multimedia a Teams (imágenes, videos, documentos)
 - Sin esta URL correcta, los archivos NO se mostrarán en Teams
+
 PUBLIC_URL=https://tu-url-ngrok.ngrok-free.app
 
 --------------------------------------------------------
@@ -159,6 +169,10 @@ Para el correcto funcionamiento del Bot, la infraestructura corporativa debe ini
         Generar el secreto en Certificates & Secrets.
 
         Consolidar permisos en API Permissions si es necesario para leer archivos de Microsoft Graph.
+          -ChannelMessage.Read.All
+          -ChannelMessage.UpdatePolicyViolation.All
+          -Files.Read.All
+          -Sites.Read.All 
 
     Azure Bot (Recurso):
 
@@ -261,6 +275,27 @@ Condición de Entrada Teams:
     Solo se procesan respuestas que provengan dentro de un Hilo. No se leerán mensajes aislados creados por fuera de un teamsThreadId registrado en DB.
 
 Formatos soportados: Texto plano, imágenes (image/jpeg, image/png) y documentos que logren pasar la criba de seguridad.
+
+---
+
+# 🛡️ Seguridad (MIME & ClamAV)
+
+El manejo de archivos adjuntos provenientes de usuarios externos (WhatsApp) hacia una red corporativa (Microsoft Teams) representa una de las superficies de ataque más críticas. Este proyecto implementa un modelo preventivo de confianza cero (*Zero Trust*) dividido en dos capas para la ingesta de medios:
+
+### 1. Validación de Tipos (MIME Type Checking)
+Antes de siquiera descargar el cuerpo del archivo, el sistema valida el tipo MIME (`mimetype`) reportado por la API de Meta.
+
+* **Lista Blanca (Allowlist):** El sistema restringe el procesamiento exclusivamente a formatos esperados y seguros (como `image/jpeg`, `image/png`, `application/pdf`, etc.).
+* **Prevención de Suplantación (Spoofing):** Esta capa evita ataques básicos donde un usuario malintencionado intenta enviar un script o un archivo ejecutable camuflado (por ejemplo, enviando un `virus.exe` renombrado maliciosamente a `foto.jpg`). Si el MIME no está autorizado, la petición se descarta.
+
+### 2. Escaneo Antimalware Aislado (ClamAV)
+Si el archivo aprueba el filtro MIME, es sometido a un análisis heurístico y de firmas profundas utilizando el motor de código abierto **ClamAV**, bajo una arquitectura segura:
+
+* **Escaneo al Vuelo (In-Memory Buffer):** El `MediaService` de NestJS descarga el archivo desde WhatsApp y lo mantiene únicamente como un *Buffer* en la memoria RAM. **El archivo crudo nunca toca el disco duro del servidor.**
+* **Análisis TCP Externo:** Ese *Buffer* se envía por la red interna de Docker (puerto `3310`) hacia el contenedor de `clamav-service`, el cual está completamente aislado del entorno de ejecución de Node.js.
+* **Toma de Decisiones (Veredicto):**
+  * ✅ **Si ClamAV responde `OK` (Limpio):** El archivo se autoriza, se persiste en la base de datos y se expone a Microsoft Teams.
+  * ❌ **Si ClamAV responde `FOUND` (Malware detectado):** El motor lanza instantáneamente un `FileSecurityBlockedError`. El flujo de ejecución se corta de inmediato, el *Buffer* se purga de la memoria RAM y la amenaza es neutralizada antes de poder infiltrarse en el *tenant* de Microsoft de la empresa.
 
 ---
 
