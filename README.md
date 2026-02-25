@@ -178,7 +178,7 @@ Para el correcto funcionamiento del Bot, la infraestructura corporativa debe ini
 
         Enlazar el MICROSOFT_APP_ID.
 
-        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages.
+        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages. (esta URL debe ser:"PUBLIC_URL/teams/webhook/messages")
 
         Agregar el "Canal" de Microsoft Teams a tu Bot de Azure.
 
