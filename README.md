@@ -95,11 +95,11 @@ J --> K[Reenvío a Meta API WhatsApp]
 
 1) ⚙️ Archivo .env
 
-## 💻 Aplicación y Puerto
+### 💻 Aplicación y Puerto
 PORT=3000
 
 --------------------------------------------------------
-## 🟢 CREDENCIALES DEL BOT (Azure Bot Service)
+### 🟢 CREDENCIALES DEL BOT (Azure Bot Service)
 --------------------------------------------------------
 MICROSOFT_APP_ID=uuid_generado_en_azure_ad
 
@@ -110,7 +110,7 @@ MICROSOFT_APP_TENANT_ID=uuid_del_tenant_de_microsoft
 MICROSOFT_APP_TYPE=SingleTenant
 
 --------------------------------------------------------
-## 🔵 CONFIGURACIÓN DE TEAMS
+### 🔵 CONFIGURACIÓN DE TEAMS
 --------------------------------------------------------
 TEAMS_CHANNEL_ID=19:xxxxxxxx@thread.tacv2 # Canal central de recepción
 
@@ -119,7 +119,7 @@ TEAMS_TEAM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx # ID del grupo de M365
 TEAMS_BOT_NAME=Nombre del bot (nombres de azure bot, teams bot y esta variable deben iguales)
 
 --------------------------------------------------------
-## 🟢 WHATSAPP API (Meta)
+### 🟢 WHATSAPP API (Meta)
 --------------------------------------------------------
 WHATSAPP_TOKEN=token_permanente_graph_api
 
@@ -128,7 +128,7 @@ WHATSAPP_PHONE_ID=id_del_numero_telefonico
 WHATSAPP_VERIFY_TOKEN=token_manual_para_webhook
 
 --------------------------------------------------------
-## 🌍 URL PÚBLICA (Ngrok o Producción)
+### 🌍 URL PÚBLICA (Ngrok o Producción)
 --------------------------------------------------------
 IMPORTANTE: Esta URL es necesaria para:
 - Recibir webhooks de Azure Bot y WhatsApp
@@ -137,7 +137,7 @@ IMPORTANTE: Esta URL es necesaria para:
 PUBLIC_URL=https://tu-url-ngrok.ngrok-free.app
 
 --------------------------------------------------------
-## 🛡️ SEGURIDAD
+### 🛡️ SEGURIDAD
 --------------------------------------------------------
 ENABLE_CLAMAV=false or true # con true se habilita el uso del antivirus
 
