@@ -93,7 +93,7 @@ J --> K[Reenvío a Meta API WhatsApp]
 
 # ⚙️ Configuración del Entorno
 
-1) ⚙️ Archivo .env
+## 1) ⚙️ Archivo .env
 
 ### 💻 Aplicación y Puerto
 PORT=3000
@@ -147,7 +147,7 @@ CLAMAV_PORT=3310
 
 --------------------------------------------------------
 
-2) ☁️ Configuración en Azure y Teams
+## 2) ☁️ Configuración en Azure y Teams
 
 
 Para el correcto funcionamiento del Bot, la infraestructura corporativa debe inicializarse de la siguiente forma:
