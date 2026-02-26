@@ -32,7 +32,7 @@ export class MediaAttachment {
   @Column({ nullable: true })
   fileName: string; // Nombre del archivo
 
-  @Column({ type: 'blob' })
+  @Column({ type: 'longblob' })
   data: Buffer; // Contenido binario del archivo
 
   @Column({ default: 0 })
@@ -41,7 +41,7 @@ export class MediaAttachment {
   @Column()
   source: string; // 'whatsapp' o 'teams'
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   caption: string; // Texto asociado al archivo
 
   @CreateDateColumn()

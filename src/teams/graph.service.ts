@@ -107,7 +107,7 @@ export class GraphService implements OnModuleInit {
         '🎬 Video recibido',
         caption || fileName || 'video.mp4',
         [],
-        [{ type: 'openUrl', title: '▶️ Ver Video', value: mediaUrl }],
+        [{ type: 'openUrl', title: '▶ Ver Video', value: mediaUrl }],
       );
       return { attachment: heroCard, textMessage: '' };
     }
@@ -143,7 +143,7 @@ export class GraphService implements OnModuleInit {
    */
   private formatLocationCard(content: string): { text: string; attachment?: Attachment } {
     // Detectamos si el mensaje tiene el formato de una ubicación
-    if (content.includes('📍 Ubicación:') || content.includes('maps.google.com') || content.includes('googleusercontent.com')) {
+    if (content.includes('🌎 Ubicación:') || content.includes('maps.google.com') || content.includes('googleusercontent.com')) {
       
       // Extraer la URL del enlace usando Regex
       const urlMatch = content.match(/(https?:\/\/[^\s]+)/);
@@ -160,7 +160,7 @@ export class GraphService implements OnModuleInit {
       if (mapUrl) {
         // Construimos la tarjeta con el botón clickeable
         const card = CardFactory.heroCard(
-          '📍 Ubicación Compartida',
+          '🌎 Ubicación Compartida',
           [], // Sin imagen de previsualización
           [{ type: 'openUrl', title: '🗺️ Abrir en Google Maps', value: mapUrl }]
         );
@@ -234,66 +234,73 @@ async sendMessageToChannel(
   const tenantId = this.configService.get<string>('MICROSOFT_APP_TENANT_ID');
   const serviceUrl = 'https://smba.trafficmanager.net/amer/';
 
-  // 1. Crear el diseño estético de la tarjeta (Adaptive Card)
-  const ticketCard = CardFactory.adaptiveCard({
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.4',
-    body: [
-      {
-        type: 'Container',
-        style: 'good', // Le da un fondo de acento (usualmente verde/azul claro)
-        bleed: true,
-        items: [
-          {
-            type: 'ColumnSet',
-            columns: [
-              {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                  {
-                    type: 'Image',
-                    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/120px-WhatsApp.svg.png',
-                    size: 'Small',
-                    altText: 'WhatsApp Logo'
-                  }
-                ]
-              },
-              {
-                type: 'Column',
-                width: 'stretch',
-                items: [
-                  {
-                    type: 'TextBlock',
-                    text: 'Nueva Conversación de WhatsApp',
-                    weight: 'Bolder',
-                    size: 'Medium',
-                    color: 'Dark'
-                  },
-                  {
-                    type: 'TextBlock',
-                    text: 'Canal de Atención al Cliente',
-                    isSubtle: true,
-                    spacing: 'None',
-                    size: 'Small'
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      {
-        type: 'FactSet', // Crea una tabla clave-valor muy limpia
-        spacing: 'Medium',
-        facts: [
-          { title: '👤 Cliente:', value: userName || 'Desconocido' },
-          { title: '📱 Número:', value: `+${userPhone}` },
-        ]
-      }
-    ]
-  });
+ // 1. Crear el diseño estético de la tarjeta (Adaptive Card)
+ const ticketCard = CardFactory.adaptiveCard({
+  type: 'AdaptiveCard',
+  $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+  version: '1.4',
+  body: [
+    {
+      type: 'Container',
+      style: 'good', // Le da un fondo de acento (usualmente verde/azul claro)
+      bleed: true,
+      items: [
+        {
+          type: 'ColumnSet',
+          columns: [
+            {
+              type: 'Column',
+              width: 'auto',
+              items: [
+                {
+                  type: 'Image',
+                  url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/120px-WhatsApp.svg.png',
+                  size: 'Small',
+                  altText: 'WhatsApp Logo'
+                }
+              ]
+            },
+            {
+              type: 'Column',
+              width: 'stretch',
+              items: [
+                {
+                  type: 'TextBlock',
+                  text: 'Nueva Conversación de WhatsApp',
+                  weight: 'Bolder',
+                  size: 'Medium',
+                },
+                {
+                  type: 'TextBlock',
+                  text: 'Canal de Atención al Cliente',
+                  isSubtle: true,
+                  spacing: 'None',
+                  size: 'Small'
+                },
+                // --- AQUÍ MOVEMOS LOS DATOS DEL CLIENTE ---
+                {
+                  type: 'TextBlock',
+                  text: userName || 'Desconocido',
+                  weight: 'Bolder', // Lo ponemos en negrita para que el nombre resalte
+                  spacing: 'Small', // Agrega un pequeño espacio de separación con los títulos de arriba
+                  wrap: true
+                },
+                {
+                  type: 'TextBlock',
+                  text: `+${userPhone}`,
+                  isSubtle: false, // Puedes ponerlo en true si quieres que el número se vea grisáceo
+                  spacing: 'None', // Pegado al nombre
+                  wrap: true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    // Se eliminó el FactSet por completo
+  ]
+});
 
   // 2. Adjuntar la tarjeta como la actividad principal del hilo
   const rootActivity: Partial<Activity> = {

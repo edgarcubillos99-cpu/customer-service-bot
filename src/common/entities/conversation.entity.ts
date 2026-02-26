@@ -18,7 +18,7 @@ export class Conversation {
   @Column({ nullable: true })
   waCustomerName: string; // Nombre del cliente
 
-  @Column()
+  @Column({ length: 500 })
   teamsThreadId: string; // ID del mensaje original en Teams
 
   @Column({ default: 'OPEN' })
@@ -30,7 +30,7 @@ export class Conversation {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, length: 500 })
   messageId: string; // ID del mensaje en Teams
 
   @Column({ nullable: true })

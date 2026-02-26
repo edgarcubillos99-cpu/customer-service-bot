@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config'; // Añadimos ConfigService
 import { Conversation } from './common/entities/conversation.entity';
 import { Message } from './common/entities/message.entity';
 import { MediaAttachment } from './common/entities/media-attachment.entity';
@@ -15,12 +15,23 @@ import configuration from './config/configuration';
 @Module({
   imports: [
     ConfigModule.forRoot({ load: [configuration], isGlobal: true }),
-    TypeOrmModule.forRoot({
-      type: 'sqlite',
-      database: 'data/database.sqlite',
-      entities: [Conversation, Message, MediaAttachment],
-      synchronize: true, // Crea las tablas automáticamente (solo para desarrollo)
+    
+    // Cambiamos forRoot por forRootAsync
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule], // Inyectamos el módulo de configuración
+      inject: [ConfigService], // Usamos el servicio para leer las variables
+      useFactory: (configService: ConfigService) => ({
+        type: 'mysql', // El nuevo motor
+        host: configService.get<string>('DB_HOST', 'localhost'),
+        port: configService.get<number>('DB_PORT', 3306),
+        username: configService.get<string>('DB_USER', 'root'),
+        password: configService.get<string>('DB_PASSWORD', ''),
+        database: configService.get<string>('DB_NAME', 'whatsapp_teams_bridge'),
+        entities: [Conversation, Message, MediaAttachment], // Tus entidades intactas
+        synchronize: true, // Crea las tablas automáticamente (solo para desarrollo)
+      }),
     }),
+    
     TeamsModule,
     WhatsappModule,
     MediaModule,

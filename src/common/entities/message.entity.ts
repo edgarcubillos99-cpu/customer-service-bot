@@ -27,7 +27,7 @@ export class Message {
 
   // Índice para búsqueda rápida, duplicados se manejan en el servicio
   @Index()
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', length: 500, nullable: true })
   teamsMessageId: string; // ID del mensaje en Teams (si viene de Teams)
 
   @Index()
