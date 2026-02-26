@@ -17,4 +17,7 @@ export default () => ({
   CLAMAV_HOST: process.env.CLAMAV_HOST,
   CLAMAV_PORT: process.env.CLAMAV_PORT ? parseInt(process.env.CLAMAV_PORT, 10) : undefined,
   CLAMAV_PATH: process.env.CLAMAV_PATH,
+  BUSINESS_HOURS_START: process.env.BUSINESS_HOURS_START,
+  BUSINESS_HOURS_END: process.env.BUSINESS_HOURS_END,
+  BUSINESS_DAYS: process.env.BUSINESS_DAYS,
 });

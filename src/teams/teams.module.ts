@@ -11,6 +11,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { Conversation } from '../common/entities/conversation.entity';
+import { BlockedNumber } from '../common/entities/blocked-number.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Conversation } from '../common/entities/conversation.entity';
     ConfigModule,
     HttpModule,
     TypeOrmModule.forFeature([Conversation]),
+    TypeOrmModule.forFeature([BlockedNumber]),
   ],
   controllers: [TeamsController],
   providers: [
@@ -28,6 +30,6 @@ import { Conversation } from '../common/entities/conversation.entity';
     TeamsBotHandler,
     BotMediaService,
   ],
-  exports: [GraphService, TeamsService],
+  exports: [GraphService, TeamsService, BotMediaService],
 })
 export class TeamsModule {}

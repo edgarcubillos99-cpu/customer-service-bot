@@ -1,15 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm'; // <-- IMPORTANTE: Faltaba esta importación
+import { Repository } from 'typeorm';
 import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { lastValueFrom } from 'rxjs';
+import { lastValueFrom, Observable } from 'rxjs';
 import { AxiosResponse } from 'axios';
 import { WhatsappResponse } from '../common/whatsapp-response.interface';
-import { Observable } from 'rxjs';
 import { Conversation } from '../common/entities/conversation.entity';
+import { BlockedNumber } from '../common/entities/blocked-number.entity';
 import { GraphService } from '../teams/graph.service';
 import { MediaService } from '../media/media.service';
 import { FileSecurityBlockedError } from '../security/file-security-blocked.error';
@@ -27,9 +29,43 @@ export class WhatsappService {
     private readonly messagesService: MessagesService,
     private readonly graphService: GraphService,
     private readonly mediaService: MediaService,
+    @InjectRepository(BlockedNumber)
+    private readonly blockedRepo: Repository<BlockedNumber>, 
   ) {
     this.token = this.configService.get<string>('whatsappToken') ?? '';
     this.phoneId = this.configService.get<string>('whatsappPhoneId') ?? '';
+  }
+
+  // Método para validar el horario laboral
+  private isWithinBusinessHours(): boolean {
+    const defaultDays = [1, 2, 3, 4, 5]; // Lunes a Viernes por defecto
+    const defaultStart = '08:00';
+    const defaultEnd = '18:00';
+
+    // Obtenemos la configuración (si no existe en el env, usamos los defaults)
+    const businessHoursConfig = this.configService.get('businessHours');
+    const days = businessHoursConfig?.days || defaultDays;
+    const start = businessHoursConfig?.start || defaultStart;
+    const end = businessHoursConfig?.end || defaultEnd;
+
+    // Forzamos la zona horaria de Bogotá/Colombia
+    const formatter = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+    const nowStr = formatter.format(new Date());
+    const currentHourString = nowStr.split(' ')[0]; // Asegura formato "HH:mm"
+
+    const dateInBogota = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const currentDay = dateInBogota.getDay(); // 0 = Dom, 1 = Lun...
+
+    const isWorkingDay = days.includes(currentDay);
+    const isWorkingHour = currentHourString >= start && currentHourString <= end;
+
+    return isWorkingDay && isWorkingHour;
   }
 
   async handleIncomingMessage(
@@ -43,17 +79,35 @@ export class WhatsappService {
     caption?: string,
   ) {
     try {
-      // 1. Verificar duplicados en BD antes de procesar
+      // --- 1. FILTRO DE NÚMEROS BLOQUEADOS ---
+      const isBlocked = await this.blockedRepo.findOne({ where: { phoneNumber: from } });
+      if (isBlocked) {
+        this.logger.warn(`🛑 Mensaje ignorado. El número ${from} está en la lista de bloqueados.`);
+        return; // Detenemos la ejecución aquí, no hacemos nada más.
+      }
+
+      // --- 2. FILTRO DE HORARIO LABORAL ---
+      if (!this.isWithinBusinessHours()) {
+        this.logger.log(`🌙 Mensaje fuera de horario de: ${from}`);
+        // Enviamos un mensaje automático al cliente
+        await this.sendMessage(
+          from,
+          "👋 ¡Hola! En este momento nuestra oficina está cerrada. Nuestro horario de atención es de Lunes a Viernes de 8:00 AM a 6:00 PM. Te responderemos a primera hora el próximo día hábil."
+        );
+        return; // Detenemos la ejecución para que no llegue a Teams.
+      }
+
+      // 3. Verificar duplicados en BD antes de procesar
       const messageExists = await this.messagesService.messageExistsByWaId(messageId);
       if (messageExists) {
         this.logger.debug(`⏭️ Mensaje duplicado ignorado (BD): ${messageId}`);
         return;
       }
 
-      // 2. Buscar o crear conversación
+      // 4. Buscar o crear conversación
       let conversation = await this.conversationsService.findByPhone(from);
       
-      // 3. Procesar media si existe
+      // 5. Procesar media si existe
       let mediaResult: { id: number; publicUrl: string; mimetype: string; fileName: string; base64Data?: string } | null = null;
       
       if (mediaId) {
@@ -90,7 +144,7 @@ export class WhatsappService {
         }
       }
 
-      // 4. Preparar contenido para Teams
+      // 6. Preparar contenido para Teams
       let teamsContent = `<b>${name}:</b> ${text || caption || ''}`;
       
       // Agregar indicador de tipo de media si aplica
@@ -99,7 +153,7 @@ export class WhatsappService {
         teamsContent = `<b>${name}:</b> ${mediaTypeLabel}`;
       }
 
-      // 5. Enviar a Teams
+      // 7. Enviar a Teams
       if (conversation && conversation.teamsThreadId) {
         // Responder a un hilo existente
         await this.graphService.replyToThread(
@@ -130,7 +184,7 @@ export class WhatsappService {
         })) as Conversation;
       }
 
-      // 6. Guardar el mensaje en la base de datos
+      // 8. Guardar el mensaje en la base de datos
       if (!conversation) {
         throw new Error('No se pudo crear o encontrar la conversación');
       }

@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'; // Añadimos Confi
 import { Conversation } from './common/entities/conversation.entity';
 import { Message } from './common/entities/message.entity';
 import { MediaAttachment } from './common/entities/media-attachment.entity';
+import { BlockedNumber } from './common/entities/blocked-number.entity';
 import { TeamsModule } from './teams/teams.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { MediaModule } from './media/media.module';
@@ -27,8 +28,8 @@ import configuration from './config/configuration';
         username: configService.get<string>('DB_USER', 'root'),
         password: configService.get<string>('DB_PASSWORD', ''),
         database: configService.get<string>('DB_NAME', 'whatsapp_teams_bridge'),
-        entities: [Conversation, Message, MediaAttachment], // Tus entidades intactas
-        synchronize: true, // Crea las tablas automáticamente (solo para desarrollo)
+        entities: [Conversation, Message, MediaAttachment, BlockedNumber], //entidades intactas
+        synchronize: true, // Crea las tablas automáticamente
       }),
     }),
     

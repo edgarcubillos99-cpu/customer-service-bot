@@ -299,7 +299,19 @@ async sendMessageToChannel(
       ]
     }
     // Se eliminó el FactSet por completo
-  ]
+  ],
+  // SECCION DE ACCIONES
+  actions: [
+      {
+        type: 'Action.Submit', // Esto enviará un payload oculto al bot cuando se haga clic
+        title: '🚫 Bloquear Número',
+        style: 'destructive', // Lo pinta de rojo en Teams para dar a entender que es una acción crítica
+        data: {
+          action: 'block_user',
+          phoneNumber: userPhone // Enviamos el número oculto en el botón
+        }
+      }
+    ],
 });
 
   // 2. Adjuntar la tarjeta como la actividad principal del hilo

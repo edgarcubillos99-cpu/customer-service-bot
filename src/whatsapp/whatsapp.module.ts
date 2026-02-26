@@ -8,6 +8,7 @@ import { HttpModule } from '@nestjs/axios';
 import { TeamsModule } from '../teams/teams.module';
 import { MessagesModule } from '../messages/messages.module';
 import { MediaModule } from '../media/media.module';
+import { BlockedNumber } from '../common/entities/blocked-number.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MediaModule } from '../media/media.module';
     MessagesModule,
     MediaModule,
     TypeOrmModule.forFeature([Conversation]),
+    TypeOrmModule.forFeature([BlockedNumber]),
   ],
   controllers: [WhatsappController],
   providers: [WhatsappService, ConversationsService],

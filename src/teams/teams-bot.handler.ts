@@ -1,14 +1,96 @@
 import { ActivityHandler, TurnContext } from 'botbuilder';
 import { Injectable } from '@nestjs/common';
 import { TeamsService } from './teams.service';
+import { BlockedNumber } from '../common/entities/blocked-number.entity';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { CardFactory } from 'botbuilder';
 
 @Injectable()
 export class TeamsBotHandler extends ActivityHandler {
-  constructor(private readonly teamsService: TeamsService) {
+  constructor(private readonly teamsService: TeamsService, @InjectRepository(BlockedNumber)private readonly blockedRepo: Repository<BlockedNumber>) {
     super();
 
     // Escuchar mensajes (cuando alguien escribe en Teams)
     this.onMessage(async (context, next) => {
+      const value = context.activity.value;
+      const text = context.activity.text?.trim() || ''; // Capturamos el texto escrito
+    
+      // ==========================================
+      // 1. MANEJAR CLIC EN "BLOQUEAR"
+      // ==========================================
+      if (value && value.action === 'block_user') {
+        const phoneToBlock = value.phoneNumber;
+    
+        try {
+          await this.blockedRepo.save({ phoneNumber: phoneToBlock });
+          
+          // En lugar de texto simple, enviamos una tarjeta con botón de "Deshacer"
+          const confirmCard = CardFactory.adaptiveCard({
+            type: 'AdaptiveCard',
+            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+            version: '1.4',
+            body: [
+              {
+                type: 'TextBlock',
+                text: `✅ **El número +${phoneToBlock} ha sido bloqueado.**`,
+                color: 'Good',
+                weight: 'Bolder'
+              }
+            ],
+            actions: [
+              {
+                type: 'Action.Submit',
+                title: '🔓 Deshacer (Desbloquear)',
+                data: {
+                  action: 'unblock_user',
+                  phoneNumber: phoneToBlock // Pasamos el número oculto
+                }
+              }
+            ]
+          });
+    
+          await context.sendActivity({ attachments: [confirmCard] });
+        } catch (error) {
+          await context.sendActivity(`⚠️ El número +${phoneToBlock} ya estaba bloqueado.`);
+        }
+        
+        await next();
+        return; // Detenemos la ejecución
+      }
+    
+      // ==========================================
+      // 2. MANEJAR CLIC EN "DESBLOQUEAR" (Botón)
+      // ==========================================
+      if (value && value.action === 'unblock_user') {
+        const phoneToUnblock = value.phoneNumber;
+        
+        // El método .delete() de TypeORM borra el registro basado en la condición
+        await this.blockedRepo.delete({ phoneNumber: phoneToUnblock });
+        
+        await context.sendActivity(`🔓 **El número +${phoneToUnblock} ha sido desbloqueado exitosamente.** El cliente ya puede enviar mensajes de nuevo.`);
+        await next();
+        return;
+      }
+    
+      // ==========================================
+      // 3. MANEJAR COMANDO MANUAL DE TEXTO
+      // ==========================================
+      // Si un operador escribe "!desbloquear 573103296471" en el chat:
+      if (text.toLowerCase().startsWith('!desbloquear ')) {
+        // Extraemos el número, quitando el comando y posibles espacios/signos +
+        const phoneToUnblock = text.substring(13).replace('+', '').trim(); 
+        
+        if (phoneToUnblock) {
+          await this.blockedRepo.delete({ phoneNumber: phoneToUnblock });
+          await context.sendActivity(`🔓 **Lista Negra Actualizada:** El número +${phoneToUnblock} fue desbloqueado.`);
+        } else {
+          await context.sendActivity(`⚠️ **Formato incorrecto.** Usa: !desbloquear NUMERO`);
+        }
+        
+        await next();
+        return;
+      }
       // Pasamos el contexto completo al servicio
       await this.teamsService.handleIncomingBotMessage(context);
       await next();
