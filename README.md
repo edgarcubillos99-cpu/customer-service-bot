@@ -249,7 +249,7 @@ docker logs -f customer_service_bot
 
 # 💾 Modelo de Datos
 
-Estructura referencial manejada por TypeORM / SQLite:
+Estructura referencial manejada por TypeORM / MYSQL:
 
 ```plaintext
 conversations
