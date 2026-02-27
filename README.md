@@ -156,6 +156,19 @@ CLAMAV_HOST=clamav-service
 CLAMAV_PORT=3310
 
 --------------------------------------------------------
+### CONFIGURACIÓN DE BASE DE DATOS (MySQL)
+--------------------------------------------------------
+DB_HOST=localhost #host.docker.internal si el servicio esta local y se va a levantar con docker
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=root
+DB_NAME=whatsapp_teams_bridge
+
+--------------------------------------------------------
+### HORARIO DE ATENCIÓN (Formato 24h, Hora Colombia)
+--------------------------------------------------------
+BUSINESS_HOURS_START=08:00
+BUSINESS_HOURS_END=18:00
 
 ## 2) ☁️ Configuración en Azure y Teams
 
