@@ -6,7 +6,7 @@ services:
     container_name: whatsapp-teams-bot
     restart: always
     ports:
-      - "3000:3000" # Cambiar el 3000 si la app usa otro puerto
+      - "${PORT}:${PORT}"
     env_file:
       - .env # Carga todas las variables
     extra_hosts:
