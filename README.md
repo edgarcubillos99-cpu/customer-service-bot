@@ -168,10 +168,13 @@ DB_NAME=whatsapp_teams_bridge
 ### HORARIO DE ATENCIÓN (Formato 24h, Hora Colombia)
 --------------------------------------------------------
 BUSINESS_HOURS_START=08:00
+
 BUSINESS_HOURS_END=18:00
 
 Días laborales: 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado, 0=Domingo
+
 Ej: Lunes a Viernes sería "1,2,3,4,5"
+
 BUSINESS_DAYS=1,2,3,4,5
 
 ## 2) ☁️ Configuración en Azure y Teams
