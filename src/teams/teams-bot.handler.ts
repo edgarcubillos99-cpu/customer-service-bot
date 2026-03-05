@@ -33,8 +33,8 @@ export class TeamsBotHandler extends ActivityHandler {
             body: [
               {
                 type: 'TextBlock',
-                text: `✅ **El número +${phoneToBlock} ha sido bloqueado.**`,
-                color: 'Good',
+                text: `☑️ **El número +${phoneToBlock} ha sido bloqueado.**`,
+                color: 'Accent',
                 weight: 'Bolder'
               }
             ],
