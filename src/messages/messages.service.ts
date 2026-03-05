@@ -6,17 +6,13 @@ import { Message } from '../common/entities/message.entity';
 
 @Injectable()
 export class MessagesService {
-  private readonly MAX_MESSAGES_PER_CONVERSATION = 10;
 
   constructor(
     @InjectRepository(Message)
     private readonly messageRepository: Repository<Message>,
   ) {}
 
-  /**
-   * Guarda un mensaje y mantiene solo los últimos N mensajes por conversación
-   * Verifica duplicados antes de guardar para evitar mensajes duplicados
-   */
+  //Guarda un mensaje y verifica duplicados antes de guardar para evitar mensajes duplicados
   async saveMessage(data: {
     conversationId: number;
     content: string;
@@ -51,10 +47,6 @@ export class MessagesService {
     try {
       const newMessage = this.messageRepository.create(data);
       const savedMessage = await this.messageRepository.save(newMessage);
-
-      // Mantener solo los últimos N mensajes por conversación
-      await this.keepLastMessages(data.conversationId);
-
       return savedMessage;
     } catch (error: any) {
       // Si hay un error de violación de índice único (condición de carrera),
@@ -75,38 +67,11 @@ export class MessagesService {
   }
 
   /**
-   * Mantiene solo los últimos N mensajes de una conversación
-   * Elimina los mensajes más antiguos que excedan el límite
-   */
-  private async keepLastMessages(conversationId: number): Promise<void> {
-    // Obtener todos los mensajes de la conversación ordenados por fecha (más recientes primero)
-    const allMessages = await this.messageRepository.find({
-      where: { conversationId },
-      order: { createdAt: 'DESC' },
-    });
-
-    // Si hay más mensajes que el límite, eliminar los más antiguos
-    if (allMessages.length > this.MAX_MESSAGES_PER_CONVERSATION) {
-      const messagesToDelete = allMessages.slice(
-        this.MAX_MESSAGES_PER_CONVERSATION,
-      );
-      const idsToDelete = messagesToDelete.map((msg) => msg.id);
-
-      if (idsToDelete.length > 0) {
-        await this.messageRepository.delete(idsToDelete);
-        console.log(
-          `🗑️ Eliminados ${idsToDelete.length} mensajes antiguos de la conversación ${conversationId}`,
-        );
-      }
-    }
-  }
-
-  /**
    * Obtiene los últimos N mensajes de una conversación
    */
   async getLastMessages(
     conversationId: number,
-    limit: number = this.MAX_MESSAGES_PER_CONVERSATION,
+    limit: number = 50
   ): Promise<Message[]> {
     return await this.messageRepository.find({
       where: { conversationId },
