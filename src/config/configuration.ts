@@ -25,4 +25,9 @@ export default () => ({
   DB_USER: process.env.DB_USER,
   DB_PASSWORD: process.env.DB_PASSWORD,
   DB_NAME: process.env.DB_NAME,
+  ubersmith: {
+    apiUrl: process.env.UBERSMITH_API_URL,
+    apiUser: process.env.UBERSMITH_API_USER,
+    apiPass: process.env.UBERSMITH_API_PASS,
+  },
 });
