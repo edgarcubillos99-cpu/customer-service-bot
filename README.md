@@ -151,7 +151,7 @@ PUBLIC_URL=https://tu-url-ngrok.ngrok-free.app
 --------------------------------------------------------
 ENABLE_CLAMAV=false or true # con true se habilita el uso del antivirus
 
-CLAMAV_HOST=clamav-service
+CLAMAV_HOST=clamav-service  #host.docker.internal si el servicio esta local y se va a levantar con docker
 
 CLAMAV_PORT=3310
 
@@ -177,6 +177,15 @@ Ej: Lunes a Viernes sería "1,2,3,4,5"
 
 BUSINESS_DAYS=1,2,3,4,5
 
+--------------------------------------------------------
+### UBERSMITH CONFIG
+--------------------------------------------------------
+UBERSMITH_API_URL=https://tu-empresa.ubersmith.com/api/2.0/
+
+UBERSMITH_API_USER=tu_usuario_api
+
+UBERSMITH_API_PASS=tu_token_o_password
+
 ## 2) ☁️ Configuración en Azure y Teams
 
 
@@ -198,7 +207,8 @@ Para el correcto funcionamiento del Bot, la infraestructura corporativa debe ini
 
         Enlazar el MICROSOFT_APP_ID.
 
-        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages. (esta URL debe ser:"PUBLIC_URL/teams/webhook/messages")
+        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages.
+        (esta URL debe ser:"PUBLIC_URL/teams/webhook/messages")
 
         Agregar el "Canal" de Microsoft Teams a tu Bot de Azure.
 
