@@ -12,6 +12,7 @@ import { SecurityModule } from './security/security.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
+import { UbersmithModule } from './ubersmith/ubersmith.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import configuration from './config/configuration';
     WhatsappModule,
     MediaModule,
     SecurityModule,
+    UbersmithModule,
   ],
   controllers: [AppController],
   providers: [AppService],
