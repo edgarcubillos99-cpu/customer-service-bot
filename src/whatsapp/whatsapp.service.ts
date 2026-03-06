@@ -36,37 +36,39 @@ export class WhatsappService {
     this.phoneId = this.configService.get<string>('whatsappPhoneId') ?? '';
   }
 
-  // Método para validar el horario laboral
-  private isWithinBusinessHours(): boolean {
-    const defaultDays = [1, 2, 3, 4, 5]; // Lunes a Viernes por defecto
-    const defaultStart = '08:00';
-    const defaultEnd = '18:00';
+// Método para validar el horario laboral
+private isWithinBusinessHours(): boolean {
+  const defaultDays = [1, 2, 3, 4, 5]; // Lunes a Viernes por defecto
+  const defaultStart = '08:00';
+  const defaultEnd = '18:00';
 
-    // Obtenemos la configuración (si no existe en el env, usamos los defaults)
-    const businessHoursConfig = this.configService.get('businessHours');
-    const days = businessHoursConfig?.days || defaultDays;
-    const start = businessHoursConfig?.start || defaultStart;
-    const end = businessHoursConfig?.end || defaultEnd;
+  // 1. Leemos las variables exactas definidas en configuration.ts
+  const daysStr = this.configService.get<string>('BUSINESS_DAYS');
+  const start = this.configService.get<string>('BUSINESS_HOURS_START') || defaultStart;
+  const end = this.configService.get<string>('BUSINESS_HOURS_END') || defaultEnd;
 
-    // Forzamos la zona horaria de Bogotá/Colombia
-    const formatter = new Intl.DateTimeFormat('es-CO', {
-      timeZone: 'America/Bogota',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
+  // 2. Convertimos el string del .env (ej. "1,2,3,4,5") a un array de números
+  const days = daysStr ? daysStr.split(',').map(Number) : defaultDays;
 
-    const nowStr = formatter.format(new Date());
-    const currentHourString = nowStr.split(' ')[0]; // Asegura formato "HH:mm"
+  // Forzamos la zona horaria de Bogotá/Colombia
+  const formatter = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 
-    const dateInBogota = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
-    const currentDay = dateInBogota.getDay(); // 0 = Dom, 1 = Lun...
+  const nowStr = formatter.format(new Date());
+  const currentHourString = nowStr.split(' ')[0]; // Asegura formato "HH:mm"
 
-    const isWorkingDay = days.includes(currentDay);
-    const isWorkingHour = currentHourString >= start && currentHourString <= end;
+  const dateInBogota = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+  const currentDay = dateInBogota.getDay(); // 0 = Dom, 1 = Lun...
 
-    return isWorkingDay && isWorkingHour;
-  }
+  const isWorkingDay = days.includes(currentDay);
+  const isWorkingHour = currentHourString >= start && currentHourString <= end;
+
+  return isWorkingDay && isWorkingHour;
+}
 
   async handleIncomingMessage(
     from: string,
@@ -89,11 +91,10 @@ export class WhatsappService {
       // --- 2. FILTRO DE HORARIO LABORAL ---
       if (!this.isWithinBusinessHours()) {
         this.logger.log(`🌙 Mensaje fuera de horario de: ${from}`);
-        // Enviamos un mensaje automático al cliente
-        await this.sendMessage(
-          from,
-          "👋 ¡Hola! En este momento nuestra oficina está cerrada. Nuestro horario de atención es de Lunes a Viernes de 8:00 AM a 6:00 PM. Te responderemos a primera hora el próximo día hábil."
-        );
+        // Enviamos un mensaje automático al cliente ajustado a su hora
+        const outOfOfficeMessage = this.getLocalBusinessHoursMessage(from);
+        
+        await this.sendMessage(from, outOfOfficeMessage);
         return; // Detenemos la ejecución para que no llegue a Teams.
       }
 
@@ -217,6 +218,72 @@ export class WhatsappService {
   }
 
   /**
+   * Deduce la zona horaria basándose en el prefijo telefónico del número de WhatsApp.
+   */
+  private getTimezoneFromPhone(phone: string): string {
+    // Quitamos cualquier '+' por si acaso
+    const cleanPhone = phone.replace('+', '');
+    
+    if (cleanPhone.startsWith('57')) return 'America/Bogota'; // Colombia
+    if (cleanPhone.startsWith('52')) return 'America/Mexico_City'; // México
+    if (cleanPhone.startsWith('54')) return 'America/Argentina/Buenos_Aires'; // Argentina
+    if (cleanPhone.startsWith('56')) return 'America/Santiago'; // Chile
+    if (cleanPhone.startsWith('51')) return 'America/Lima'; // Perú
+    if (cleanPhone.startsWith('58')) return 'America/Caracas'; // Venezuela
+    if (cleanPhone.startsWith('593')) return 'America/Guayaquil'; // Ecuador
+    if (cleanPhone.startsWith('507')) return 'America/Panama'; // Panamá
+    if (cleanPhone.startsWith('506')) return 'America/Costa_Rica'; // Costa Rica
+    if (cleanPhone.startsWith('34')) return 'Europe/Madrid'; // España
+    if (cleanPhone.startsWith('1')) return 'America/New_York'; // US/Canadá (por defecto Eastern)
+    
+    return 'America/Bogota'; // Fallback por defecto
+  }
+
+  /**
+   * Construye el mensaje de fuera de horario adaptado a la hora del cliente.
+   */
+/**
+   * Construye el mensaje de fuera de horario adaptado a la hora del cliente.
+   */
+private getLocalBusinessHoursMessage(phone: string): string {
+  const defaultStart = '08:00';
+  const defaultEnd = '18:00';
+  
+  // Leemos las variables directas de la configuración
+  const start = this.configService.get<string>('BUSINESS_HOURS_START') || defaultStart;
+  const end = this.configService.get<string>('BUSINESS_HOURS_END') || defaultEnd;
+
+  const userTz = this.getTimezoneFromPhone(phone);
+
+  // Función para convertir hora Bogotá a hora Local del usuario
+  const formatTimeInTz = (timeStr: string, targetTz: string) => {
+    const [hours, minutes] = timeStr.split(':');
+    const date = new Date();
+    // Colombia no tiene horario de verano y siempre es UTC-5.
+    // Sumamos 5 a la hora de inicio para llevarla a UTC antes de formatear a la zona destino.
+    date.setUTCHours(parseInt(hours, 10) + 5, parseInt(minutes, 10), 0, 0);
+    
+    return new Intl.DateTimeFormat('es-CO', {
+      timeZone: targetTz,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).format(date);
+  };
+
+  const localStart = formatTimeInTz(start, userTz);
+  const localEnd = formatTimeInTz(end, userTz);
+
+  // Si escribe desde Colombia, el mensaje es el estándar
+  if (userTz === 'America/Bogota') {
+    return `👋 ¡Hola! En este momento nuestra oficina está cerrada. Nuestro horario de atención es de Lunes a Sábado de ${localStart} a ${localEnd}.`;
+  }
+
+  // Si escribe desde otro país, aclaramos que es su hora local
+  return `👋 ¡Hola! En este momento nuestra oficina está cerrada. Nuestro horario de atención es de Lunes a Sábado de ${localStart} a ${localEnd} (hora de tu país).`;
+}
+
+  /**
    * Envía un mensaje de texto a WhatsApp
    */
   async sendMessage(to: string, message: string): Promise<WhatsappResponse> {
@@ -306,3 +373,4 @@ export class WhatsappService {
     }
   }
 }
+
