@@ -5,6 +5,7 @@ import { Conversation } from './common/entities/conversation.entity';
 import { Message } from './common/entities/message.entity';
 import { MediaAttachment } from './common/entities/media-attachment.entity';
 import { BlockedNumber } from './common/entities/blocked-number.entity';
+import { Lead } from './common/entities/leads.entity';
 import { TeamsModule } from './teams/teams.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { MediaModule } from './media/media.module';
@@ -13,6 +14,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
 import { UbersmithModule } from './ubersmith/ubersmith.module';
+import { LeadsModule } from './leads/leads.module';
 
 @Module({
   imports: [
@@ -29,7 +31,7 @@ import { UbersmithModule } from './ubersmith/ubersmith.module';
         username: configService.get<string>('DB_USER', 'root'),
         password: configService.get<string>('DB_PASSWORD', ''),
         database: configService.get<string>('DB_NAME', 'whatsapp_teams_bridge'),
-        entities: [Conversation, Message, MediaAttachment, BlockedNumber], //entidades intactas
+        entities: [Conversation, Message, MediaAttachment, BlockedNumber, Lead],
         synchronize: true, // Crea las tablas automáticamente
       }),
     }),
@@ -39,6 +41,7 @@ import { UbersmithModule } from './ubersmith/ubersmith.module';
     MediaModule,
     SecurityModule,
     UbersmithModule,
+    LeadsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
