@@ -21,15 +21,21 @@ export class MetaWebhookController {
     throw new UnauthorizedException('Token de verificación inválido');
   }
 
-  // 2. Recepción de los Leads
+ // 2. Recepción de los Leads
   @Post()
   @HttpCode(HttpStatus.OK) // Forzamos el 200 OK inmediato
   handleLeadEvent(@Body() body: any) {
+    // 🚨 ESTE LOG ES VITAL PARA DEBUGGEAR 🚨
+    console.log('\n--- 🚨 NUEVO EVENTO POST RECIBIDO DESDE META ---');
+    console.log(JSON.stringify(body, null, 2));
+
     // Validamos que sea un evento de página
-    if (body.object === 'page') {
+    if (body && body.object === 'page') {
       this.leadsService.processLeadEvent(body);
       return 'EVENT_RECEIVED';
     }
+    
+    console.log('❌ Petición ignorada: El body no es un objeto de página válido');
     throw new NotFoundException('Objeto no soportado');
   }
 }
