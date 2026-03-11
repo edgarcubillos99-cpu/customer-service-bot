@@ -47,13 +47,14 @@ export class LeadsService {
 
       const fieldData = response.data.field_data;
       
-      // 2. Extraer campos (ajusta los nombres según tu formulario de Meta)
+      // 2. Extraer campos
       const nombreField = fieldData.find((f: any) => f.name === 'full_name');
       const telefonoField = fieldData.find((f: any) => f.name === 'phone_number');
       const ciudadField = fieldData.find((f: any) => f.name === 'city');
 
       let nombre = nombreField ? nombreField.values[0] : 'Cliente Desconocido';
       let telefono = telefonoField ? telefonoField.values[0] : null;
+      let ciudad = ciudadField ? ciudadField.values[0] : null;
 
       if (!telefono) {
         this.logger.warn(`El lead ${leadgenId} no tiene número de teléfono. Omitiendo.`);
@@ -61,7 +62,7 @@ export class LeadsService {
       }
 
       // 3. Normalizar el teléfono (Limpiar espacios, guiones, símbolos raros)
-      // Idealmente, aquí aseguras que tenga el código de país correcto (ej: 57 para Colombia)
+      // Idealmente, aquí asegura que tenga el código de país correcto (ej: 57 para Colombia)
       const telefonoNormalizado = telefono.replace(/\D/g, '');
 
       // 4. Evitar duplicados (Meta puede reenviar el webhook)
@@ -80,7 +81,8 @@ export class LeadsService {
         telefono: telefonoNormalizado,
         origen: 'meta_ads',
         estado: 'por contactar',
-        leadgen_id: leadgenId
+        leadgen_id: leadgenId,
+        ciudad: ciudad,
       });
 
       await this.leadsRepository.save(nuevoLead);

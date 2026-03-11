@@ -12,11 +12,11 @@ export class MetaWebhookController {
     @Query('hub.verify_token') token: string,
     @Query('hub.challenge') challenge: string,
   ) {
-    const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN; // Configura esto en tu .env
+    const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       console.log('Webhook de Meta verificado correctamente.');
-      return challenge; // Meta espera que le devuelvas este exacto string
+      return challenge; // Meta espera que le devuelva este exacto string
     }
     throw new UnauthorizedException('Token de verificación inválido');
   }
