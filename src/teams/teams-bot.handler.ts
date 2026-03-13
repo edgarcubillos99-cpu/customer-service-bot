@@ -14,7 +14,9 @@ export class TeamsBotHandler extends ActivityHandler {
     // Escuchar mensajes (cuando alguien escribe en Teams)
     this.onMessage(async (context, next) => {
       const value = context.activity.value;
-      const text = context.activity.text?.trim() || ''; // Capturamos el texto escrito
+      // Normalizar texto: quitar menciones <at>...</at> y espacios extra (para que "@bot !herramientas" y "!herramientas" funcionen)
+      const rawText = context.activity.text?.trim() || '';
+      const text = rawText.replace(/<at[^>]*>.*?<\/at>/gi, '').replace(/\s+/g, ' ').trim();
     
       // ==========================================
       // 1. MANEJAR CLIC EN "BLOQUEAR"
@@ -91,6 +93,79 @@ export class TeamsBotHandler extends ActivityHandler {
         await next();
         return;
       }
+
+      // ==========================================
+      // 4. MANEJAR COMANDO "!HERRAMIENTAS"
+      // ==========================================
+      if (text.toLowerCase() === '!herramientas') {
+        const toolsCard = CardFactory.adaptiveCard({
+          type: 'AdaptiveCard',
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          version: '1.4',
+          body: [
+            {
+              type: 'TextBlock',
+              text: '🛠️ Panel de Herramientas',
+              weight: 'Bolder',
+              size: 'Large',
+              color: 'Accent'
+            },
+            {
+              type: 'TextBlock',
+              text: 'Ingresa los datos para contactar a un cliente potencial:',
+              wrap: true
+            },
+            {
+              type: 'Input.Text',
+              id: 'leadPhone',
+              placeholder: 'Ej: 573001234567 (Sin el +)',
+              label: 'Número de WhatsApp:'
+            },
+            {
+              type: 'Input.Text',
+              id: 'leadName',
+              placeholder: 'Ej: Juan Pérez',
+              label: 'Nombre del Cliente:'
+            }
+          ],
+          actions: [
+            {
+              type: 'Action.Submit',
+              title: '📲 Contactar Cliente Potencial',
+              data: {
+                action: 'contact_lead'
+              }
+            }
+          ]
+        });
+
+        await context.sendActivity({ attachments: [toolsCard] });
+        await next();
+        return;
+      }
+
+      // ==========================================
+      // 5. MANEJAR CLIC EN "CONTACTAR CLIENTE"
+      // ==========================================
+      if (value && value.action === 'contact_lead') {
+        const { leadPhone, leadName } = value;
+
+        if (!leadPhone) {
+          await context.sendActivity('⚠️ Error: Debes ingresar un número de teléfono válido.');
+          await next();
+          return;
+        }
+
+        await context.sendActivity(`⏳ Iniciando protocolo de contacto para +${leadPhone}...`);
+        
+        // AQUÍ LLAMAREMOS AL SERVICIO ORQUESTADOR
+        await this.teamsService.iniciarContactoProactivo(leadPhone, leadName || 'Cliente');
+        
+        await context.sendActivity(`✅ Hilo creado y template enviado a +${leadPhone}.`);
+        await next();
+        return;
+      }
+
       // Pasamos el contexto completo al servicio
       await this.teamsService.handleIncomingBotMessage(context);
       await next();

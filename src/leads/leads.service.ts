@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lead } from '../common/entities/leads.entity';
 import axios from 'axios';
+import { TeamsService } from '../teams/teams.service';
 
 @Injectable()
 export class LeadsService {
@@ -11,6 +12,8 @@ export class LeadsService {
   constructor(
     @InjectRepository(Lead)
     private leadsRepository: Repository<Lead>,
+    @Inject(forwardRef(() => TeamsService))
+    private readonly teamsService: TeamsService,
   ) {}
 
   async processLeadEvent(body: any) {
@@ -87,6 +90,9 @@ export class LeadsService {
 
       await this.leadsRepository.save(nuevoLead);
       this.logger.log(`Lead guardado en DB exitosamente: ${nombre}`);
+
+      // Iniciar contacto proactivo (hilo en Teams + template WhatsApp)
+      await this.teamsService.iniciarContactoProactivo(telefonoNormalizado, nombre);
 
     } catch (error) {
       this.logger.error(`Error obteniendo datos del lead ${leadgenId} desde Meta API`, error);

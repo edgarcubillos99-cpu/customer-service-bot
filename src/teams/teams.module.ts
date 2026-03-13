@@ -12,18 +12,20 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { Conversation } from '../common/entities/conversation.entity';
 import { BlockedNumber } from '../common/entities/blocked-number.entity';
+import { Lead } from '../common/entities/leads.entity';
 import { UbersmithModule } from '../ubersmith/ubersmith.module';
+import { LeadsModule } from '../leads/leads.module';
 
 @Module({
   imports: [
     forwardRef(() => WhatsappModule),
     MessagesModule,
     MediaModule,
+    forwardRef(() => LeadsModule),
     UbersmithModule,
     ConfigModule,
     HttpModule,
-    TypeOrmModule.forFeature([Conversation]),
-    TypeOrmModule.forFeature([BlockedNumber]),
+    TypeOrmModule.forFeature([Conversation, BlockedNumber, Lead]),
   ],
   controllers: [TeamsController],
   providers: [

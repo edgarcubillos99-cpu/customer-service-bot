@@ -2,6 +2,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { TurnContext } from 'botbuilder';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -10,6 +12,8 @@ import { BotMediaService } from './bot-media.service';
 import { MediaService } from '../media/media.service';
 import { FileSecurityBlockedError } from '../security/file-security-blocked.error';
 import { GraphService } from './graph.service';
+import { LeadsService } from '../leads/leads.service';
+import { Lead } from '../common/entities/leads.entity';
 
 @Injectable()
 export class TeamsService {
@@ -24,6 +28,9 @@ export class TeamsService {
     private readonly botMediaService: BotMediaService,
     private readonly mediaService: MediaService,
     private readonly graphService: GraphService,
+    private readonly leadsService: LeadsService,
+    @InjectRepository(Lead)
+    private readonly leadsRepository: Repository<Lead>,
   ) {
     this.botName = this.configService.get<string>('teamsBotName') ?? 'botito';
   }
@@ -176,6 +183,34 @@ export class TeamsService {
     } catch (error: any) {
       this.logger.error(`❌ Error procesando mensaje de Teams: ${error.message}`);
     }
+  }
+
+  // Inyectar en el constructor: GraphService, ConversationsService, WhatsappService, y el Repositorio de Leads
+
+  async iniciarContactoProactivo(phoneNumber: string, customerName: string) {
+    // 1. Crear el Hilo proactivamente en Teams vía Graph API (sendMessageToChannel crea el hilo)
+    const { id: threadId } = await this.graphService.sendMessageToChannel(
+      customerName,
+      phoneNumber,
+      `El bot ha enviado un mensaje de agenda a **${customerName}** (+${phoneNumber}). Esperando respuesta del cliente...`,
+    );
+
+    // 2. Registrar la conversación en la Base de Datos usando el servicio existente
+    await this.conversationsService.create({
+      waPhoneNumber: phoneNumber,
+      waCustomerName: customerName,
+      teamsThreadId: threadId,
+    });
+
+    // 3. Actualizar el estado en la tabla de Leads (si existe un lead con ese teléfono)
+    await this.leadsRepository.update(
+      { telefono: phoneNumber },
+      { estado: 'contactado' },
+    );
+
+    // 4. Enviar el Template por WhatsApp
+    // Como el template no está aprobado, temporalmente enviaremos un mensaje de texto normal
+    await this.whatsappService.sendTemplateMessage(phoneNumber, customerName);
   }
 
   /**

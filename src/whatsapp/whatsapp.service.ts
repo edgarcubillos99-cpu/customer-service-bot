@@ -284,6 +284,16 @@ private getLocalBusinessHoursMessage(phone: string): string {
 }
 
   /**
+   * Envía el message template a un cliente potencial (proactivo).
+   * Mientras el template no esté aprobado por Meta, envía un mensaje de texto de prueba.
+   */
+  async sendTemplateMessage(phoneNumber: string, customerName: string): Promise<void> {
+    // TODO: Cuando tengamos el template aprobado, llamar a la API de WhatsApp con template.
+    const placeholderMessage = `Hola ${customerName}, gracias por tu interés. Un asesor te contactará pronto.`;
+    await this.sendMessage(phoneNumber, placeholderMessage);
+  }
+
+  /**
    * Envía un mensaje de texto a WhatsApp
    */
   async sendMessage(to: string, message: string): Promise<WhatsappResponse> {
