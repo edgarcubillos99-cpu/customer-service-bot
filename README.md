@@ -205,7 +205,6 @@ UBERSMITH_API_PASS=tu_token_o_password
 --------------------------------------------------------
 ### META LEAD ADS (Formularios de Facebook/Instagram)
 --------------------------------------------------------
-
 META_VERIFY_TOKEN=token_de_validación_para_app _de_leads
 
 META_PAGE_ACCESS_TOKEN=tu_token_de_acceso_a_la_pagina_aqui
