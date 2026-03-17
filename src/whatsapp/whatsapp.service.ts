@@ -287,10 +287,60 @@ private getLocalBusinessHoursMessage(phone: string): string {
    * Envía el message template a un cliente potencial (proactivo).
    * Mientras el template no esté aprobado por Meta, envía un mensaje de texto de prueba.
    */
-  async sendTemplateMessage(phoneNumber: string, customerName: string): Promise<void> {
-    // TODO: Cuando tengamos el template aprobado, llamar a la API de WhatsApp con template.
-    const placeholderMessage = `Hola ${customerName}, gracias por tu interés. Un asesor te contactará pronto.`;
-    await this.sendMessage(phoneNumber, placeholderMessage);
+  async sendTemplateMessage(to: string, customerName?: string): Promise<boolean> {
+    try {
+      // Nombre y lenguaje del template por defecto de Meta
+      const templateName = 'hello_world';
+      const languageCode = 'en_US';
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        to: to,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: languageCode,
+          },
+          /* // 💡 CUANDO TENGAS TU TEMPLATE APROBADO:
+          // Descomenta esta sección si tu template tiene variables (ej. {{1}}).
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                {
+                  type: 'text',
+                  text: customerName || 'Cliente Potencial'
+                }
+              ]
+            }
+          ]
+          */
+        },
+      };
+
+      // Se asume que this.phoneId y this.token ya están instanciados en el constructor
+      const url = `https://graph.facebook.com/v19.0/${this.phoneId}/messages`;
+
+      const response = await lastValueFrom(
+        this.http.post(url, payload, {
+          headers: {
+            Authorization: `Bearer ${this.token}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+      this.logger.log(`✅ Template '${templateName}' enviado a ${to}. ID: ${response.data.messages[0].id}`);
+      return true;
+
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error?.message || error.message;
+      this.logger.error(`❌ Error enviando template a ${to}: ${errorMsg}`);
+      
+      // Lanzar el error para que sea capturado por quien invoca la función
+      throw new Error(`Fallo al enviar template de Meta: ${errorMsg}`);
+    }
   }
 
   /**
