@@ -160,9 +160,6 @@ export class TeamsBotHandler extends ActivityHandler {
         
         // AQUÍ LLAMAREMOS AL SERVICIO ORQUESTADOR
         await this.teamsService.iniciarContactoProactivo(leadPhone, leadName || 'Cliente');
-        
-        await context.sendActivity(`✅ Hilo creado y template enviado a +${leadPhone}.`);
-        await next();
         return;
       }
 

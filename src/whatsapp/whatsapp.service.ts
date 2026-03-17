@@ -433,4 +433,3 @@ private getLocalBusinessHoursMessage(phone: string): string {
     }
   }
 }
-
