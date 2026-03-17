@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+
+export interface WhatsappTemplate {
+  name: string;
+  language: string;
+  bodyText: string;
+  headerText?: string;
+  variables: string[]; // ej. ['{{1}}', '{{2}}']
+}
 import { InjectRepository } from '@nestjs/typeorm'; // <-- IMPORTANTE: Faltaba esta importación
 import { Repository } from 'typeorm';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -284,43 +292,104 @@ private getLocalBusinessHoursMessage(phone: string): string {
 }
 
   /**
-   * Envía el message template a un cliente potencial (proactivo).
-   * Mientras el template no esté aprobado por Meta, envía un mensaje de texto de prueba.
+   * Consulta los message templates aprobados en la cuenta WABA de Meta.
    */
-  async sendTemplateMessage(to: string, customerName?: string): Promise<boolean> {
-    try {
-      // Nombre y lenguaje del template por defecto de Meta
-      const templateName = 'hello_world';
-      const languageCode = 'en_US';
+  async getTemplates(): Promise<WhatsappTemplate[]> {
+    const wabaId = this.configService.get<string>('whatsappWabaId');
+    if (!wabaId) {
+      this.logger.warn('WHATSAPP_WABA_ID no está configurado. No se pueden obtener templates.');
+      return [];
+    }
 
-      const payload = {
+    try {
+      const url = `https://graph.facebook.com/v19.0/${wabaId}/message_templates`;
+      const response = await lastValueFrom(
+        this.http.get(url, {
+          params: {
+            status: 'APPROVED',
+            fields: 'name,language,status,components',
+            access_token: this.token,
+          },
+        }),
+      );
+
+      const rawTemplates: any[] = response.data.data ?? [];
+      this.logger.debug(`📋 Templates crudos de Meta: ${JSON.stringify(rawTemplates)}`);
+
+      return rawTemplates.map((t) => {
+        const bodyComp = t.components?.find((c: any) => c.type === 'BODY');
+        const headerComp = t.components?.find(
+          (c: any) => c.type === 'HEADER' && c.format === 'TEXT',
+        );
+        const bodyText: string = bodyComp?.text ?? '';
+        const headerText: string | undefined = headerComp?.text;
+        const variables = this.extractTemplateVariables(bodyText);
+
+        return { name: t.name as string, language: t.language as string, bodyText, headerText, variables };
+      });
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message ?? error.message;
+      this.logger.error(`❌ Error consultando templates de Meta: ${msg}`);
+      return [];
+    }
+  }
+
+  /**
+   * Extrae los marcadores de variable únicos de un texto de template.
+   * Soporta tanto variables posicionales ({{1}}) como nombradas ({{nombre}}).
+   */
+  private extractTemplateVariables(text: string): string[] {
+    const matches = text.match(/\{\{[^}]+\}\}/g);
+    return matches ? [...new Set(matches)] : [];
+  }
+
+  /**
+   * Envía un message template aprobado a un número de WhatsApp.
+   * @param to             Número destino (sin +)
+   * @param templateName   Nombre exacto del template en Meta
+   * @param languageCode   Código de idioma del template (ej. "es_CO", "en_US")
+   * @param bodyVariables  Valores para las variables del cuerpo, en orden
+   * @param variableTags   Tags originales del template (ej. ['{{nombre}}', '{{1}}'])
+   *                       Se usan para detectar si el template requiere parameter_name.
+   */
+  async sendTemplateMessage(
+    to: string,
+    templateName: string,
+    languageCode: string,
+    bodyVariables: string[] = [],
+    variableTags: string[] = [],
+  ): Promise<boolean> {
+    try {
+      const components: any[] = [];
+      if (bodyVariables.length > 0) {
+        components.push({
+          type: 'body',
+          parameters: bodyVariables.map((v, idx) => {
+            const tag = variableTags[idx] ?? '';
+            const paramKey = tag.replace(/^\{\{|\}\}$/g, '').trim();
+            // Si el tag no es puramente numérico (ej. {{nombre}}) → named parameter
+            const isNamed = paramKey.length > 0 && !/^\d+$/.test(paramKey);
+            const param: any = { type: 'text', text: v };
+            if (isNamed) param.parameter_name = paramKey;
+            return param;
+          }),
+        });
+      }
+
+      const payload: any = {
         messaging_product: 'whatsapp',
-        to: to,
+        to,
         type: 'template',
         template: {
           name: templateName,
-          language: {
-            code: languageCode,
-          },
-          /* // 💡 CUANDO TENGAS TU TEMPLATE APROBADO:
-          // Descomenta esta sección si tu template tiene variables (ej. {{1}}).
-          components: [
-            {
-              type: 'body',
-              parameters: [
-                {
-                  type: 'text',
-                  text: customerName || 'Cliente Potencial'
-                }
-              ]
-            }
-          ]
-          */
+          language: { code: languageCode },
+          ...(components.length > 0 && { components }),
         },
       };
 
-      // Se asume que this.phoneId y this.token ya están instanciados en el constructor
       const url = `https://graph.facebook.com/v19.0/${this.phoneId}/messages`;
+
+      this.logger.debug(`📦 Payload enviado a Meta: ${JSON.stringify(payload)}`);
 
       const response = await lastValueFrom(
         this.http.post(url, payload, {
@@ -331,14 +400,14 @@ private getLocalBusinessHoursMessage(phone: string): string {
         }),
       );
 
-      this.logger.log(`✅ Template '${templateName}' enviado a ${to}. ID: ${response.data.messages[0].id}`);
+      this.logger.log(
+        `✅ Template '${templateName}' enviado a ${to}. ID: ${response.data.messages[0].id}`,
+      );
       return true;
-
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error?.message || error.message;
-      this.logger.error(`❌ Error enviando template a ${to}: ${errorMsg}`);
-      
-      // Lanzar el error para que sea capturado por quien invoca la función
+      const fullError = error.response?.data ?? error.message;
+      this.logger.error(`❌ Error enviando template a ${to}: ${JSON.stringify(fullError)}`);
+      const errorMsg = error.response?.data?.error?.message ?? error.message;
       throw new Error(`Fallo al enviar template de Meta: ${errorMsg}`);
     }
   }

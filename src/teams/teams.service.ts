@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TurnContext } from 'botbuilder';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { WhatsappService, WhatsappTemplate } from '../whatsapp/whatsapp.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
 import { BotMediaService } from './bot-media.service';
@@ -187,45 +187,74 @@ export class TeamsService {
 
   // Inyectar en el constructor: GraphService, ConversationsService, WhatsappService, y el Repositorio de Leads
 
-  async iniciarContactoProactivo(phoneNumber: string, customerName: string) {
+  /** Devuelve los templates aprobados de WhatsApp Business. */
+  async getWhatsappTemplates(): Promise<WhatsappTemplate[]> {
+    return this.whatsappService.getTemplates();
+  }
+
+  /**
+   * Inicia el contacto proactivo con un cliente potencial:
+   * crea el hilo en Teams, registra la conversación y envía el template elegido.
+   * @param phoneNumber    Número del cliente (sin +)
+   * @param customerName   Nombre del cliente
+   * @param templateName   Nombre exacto del template aprobado en Meta
+   * @param languageCode   Código de idioma del template (ej. "es_CO")
+   * @param bodyVariables  Valores para {{1}}, {{2}}, … del cuerpo del template
+   */
+  async iniciarContactoProactivo(
+    phoneNumber: string,
+    customerName: string,
+    templateName: string,
+    languageCode: string,
+    bodyVariables: string[] = [],
+    variableTags: string[] = [],
+  ) {
     let threadId: string | undefined;
     try {
-      // 1. Crear el Hilo proactivamente en Teams vía Graph API (sendMessageToChannel crea el hilo)
+      // 1. Crear el hilo en Teams
       const result = await this.graphService.sendMessageToChannel(
         customerName,
         phoneNumber,
-        `El bot ha enviado un mensaje de agenda a **${customerName}** (+${phoneNumber}). Esperando respuesta del cliente...`,
+        `El operador ha iniciado contacto con **${customerName}** (+${phoneNumber}) usando el template **${templateName}**. Esperando respuesta del cliente...`,
       );
       threadId = result.id;
 
-      // 2. Registrar la conversación en la Base de Datos usando el servicio existente
+      // 2. Registrar la conversación en BD
       await this.conversationsService.create({
         waPhoneNumber: phoneNumber,
         waCustomerName: customerName,
         teamsThreadId: threadId,
       });
 
-      // 3. Actualizar el estado en la tabla de Leads (si existe un lead con ese teléfono)
+      // 3. Actualizar estado del lead si existe
       await this.leadsRepository.update(
         { telefono: phoneNumber },
         { estado: 'contactado' },
       );
 
-      // 4. Enviar el Template por WhatsApp
-      // Como el template no está aprobado, temporalmente enviaremos un mensaje de texto normal
-      await this.whatsappService.sendTemplateMessage(phoneNumber, customerName);
+      // 4. Enviar el template elegido por WhatsApp
+      await this.whatsappService.sendTemplateMessage(
+        phoneNumber,
+        templateName,
+        languageCode,
+        bodyVariables,
+        variableTags,
+      );
 
-      // Confirmar en el hilo que el template se envió con éxito
+      // 5. Confirmar en el hilo
+      const varsResumen =
+        bodyVariables.length > 0
+          ? ` (variables: ${bodyVariables.map((v, i) => `{{${i + 1}}}=${v}`).join(', ')})`
+          : '';
       await this.graphService.replyToThread(
         threadId,
-        `✅ Template inicial enviado exitosamente a WhatsApp. A la espera de que el cliente responda para continuar la conversación.`
+        `✅ Template **${templateName}** enviado exitosamente a WhatsApp${varsResumen}. A la espera de respuesta del cliente.`,
       );
     } catch (error: any) {
-      // Notificar al operador en Teams si el template falló (solo si ya tenemos threadId)
       if (threadId) {
         await this.graphService.replyToThread(
           threadId,
-          `❌ Error crítico: No se pudo enviar el template de WhatsApp. Detalles: ${error.message}`
+          `❌ Error crítico: No se pudo enviar el template de WhatsApp. Detalles: ${error.message}`,
         );
       }
     }

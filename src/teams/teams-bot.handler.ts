@@ -1,5 +1,5 @@
 import { ActivityHandler, TurnContext } from 'botbuilder';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TeamsService } from './teams.service';
 import { BlockedNumber } from '../common/entities/blocked-number.entity';
 import { Repository } from 'typeorm';
@@ -8,6 +8,8 @@ import { CardFactory } from 'botbuilder';
 
 @Injectable()
 export class TeamsBotHandler extends ActivityHandler {
+  private readonly logger = new Logger(TeamsBotHandler.name);
+
   constructor(private readonly teamsService: TeamsService, @InjectRepository(BlockedNumber)private readonly blockedRepo: Repository<BlockedNumber>) {
     super();
 
@@ -98,6 +100,34 @@ export class TeamsBotHandler extends ActivityHandler {
       // 4. MANEJAR COMANDO "!HERRAMIENTAS"
       // ==========================================
       if (text.toLowerCase() === '!herramientas') {
+        const templates = await this.teamsService.getWhatsappTemplates();
+
+        const templateButtons = templates.map((t) => ({
+          type: 'Action.Submit',
+          title: `📋 ${t.name} (${t.language})`,
+          data: {
+            action: 'select_template',
+            templateName: t.name,
+            templateLanguage: t.language,
+            templateBodyText: t.bodyText,
+            templateVariables: t.variables,
+          },
+        }));
+
+        if (templateButtons.length === 0) {
+          templateButtons.push({
+            type: 'Action.Submit',
+            title: '📋 hello_world (en_US)  — fallback',
+            data: {
+              action: 'select_template',
+              templateName: 'hello_world',
+              templateLanguage: 'en_US',
+              templateBodyText: '',
+              templateVariables: [],
+            },
+          });
+        }
+
         const toolsCard = CardFactory.adaptiveCard({
           type: 'AdaptiveCard',
           $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -108,35 +138,28 @@ export class TeamsBotHandler extends ActivityHandler {
               text: '🛠️ Panel de Herramientas',
               weight: 'Bolder',
               size: 'Large',
-              color: 'Accent'
+              color: 'Accent',
             },
             {
               type: 'TextBlock',
-              text: 'Ingresa los datos para contactar a un cliente potencial:',
-              wrap: true
+              text: `Se encontraron **${templates.length}** template(s) aprobado(s). Completa los datos y elige el template a enviar:`,
+              wrap: true,
             },
             {
               type: 'Input.Text',
               id: 'leadPhone',
               placeholder: 'Ej: 573001234567 (Sin el +)',
-              label: 'Número de WhatsApp:'
+              label: 'Número de WhatsApp:',
+              isRequired: true,
             },
             {
               type: 'Input.Text',
               id: 'leadName',
               placeholder: 'Ej: Juan Pérez',
-              label: 'Nombre del Cliente:'
-            }
+              label: 'Nombre del Cliente:',
+            },
           ],
-          actions: [
-            {
-              type: 'Action.Submit',
-              title: '📲 Contactar Cliente Potencial',
-              data: {
-                action: 'contact_lead'
-              }
-            }
-          ]
+          actions: templateButtons,
         });
 
         await context.sendActivity({ attachments: [toolsCard] });
@@ -145,10 +168,94 @@ export class TeamsBotHandler extends ActivityHandler {
       }
 
       // ==========================================
-      // 5. MANEJAR CLIC EN "CONTACTAR CLIENTE"
+      // 5. MANEJAR SELECCIÓN DE TEMPLATE
+      // ==========================================
+      if (value && value.action === 'select_template') {
+        const { leadPhone, leadName, templateName, templateLanguage, templateBodyText, templateVariables } = value;
+        const variables: string[] = Array.isArray(templateVariables) ? templateVariables : [];
+
+        if (!leadPhone) {
+          await context.sendActivity('⚠️ Debes ingresar un número de teléfono antes de seleccionar el template.');
+          await next();
+          return;
+        }
+
+        // Si el template no tiene variables, enviamos directamente
+        if (variables.length === 0) {
+          await context.sendActivity(`⏳ Enviando template **${templateName}** a +${leadPhone}...`);
+          await this.teamsService.iniciarContactoProactivo(leadPhone, leadName || 'Cliente', templateName, templateLanguage, [], []);
+          await next();
+          return;
+        }
+
+        // Si tiene variables, mostramos un formulario para rellenarlas
+        const preview = (templateBodyText as string)
+          .replace(/\{\{([^}]+)\}\}/g, (_: string, n: string) => `[ ${n} ]`);
+
+        const variableInputs = variables.map((varTag: string) => {
+          // Obtener el contenido de la variable: "nombre", "ciudad", "1", etc.
+          const varKey = varTag.replace(/^\{\{|\}\}$/g, '').trim();
+          const inputId = `var_${varKey}`;
+          const isNameLike = ['nombre', 'name', 'cliente', 'client'].some((k) =>
+            varKey.toLowerCase().includes(k),
+          );
+          return {
+            type: 'Input.Text',
+            id: inputId,
+            label: `${varTag}:`,
+            placeholder: isNameLike ? (leadName || 'Nombre del cliente') : `Valor para ${varTag}`,
+            value: isNameLike ? (leadName || '') : '',
+          };
+        });
+
+        const varCard = CardFactory.adaptiveCard({
+          type: 'AdaptiveCard',
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          version: '1.4',
+          body: [
+            {
+              type: 'TextBlock',
+              text: `📋 Variables del template: **${templateName}**`,
+              weight: 'Bolder',
+              size: 'Medium',
+              color: 'Accent',
+            },
+            {
+              type: 'TextBlock',
+              text: `Vista previa: _${preview}_`,
+              wrap: true,
+              isSubtle: true,
+            },
+            ...variableInputs,
+          ],
+          actions: [
+            {
+              type: 'Action.Submit',
+              title: '📲 Enviar Template',
+              data: {
+                action: 'contact_lead',
+                leadPhone,
+                leadName: leadName || 'Cliente',
+                templateName,
+                templateLanguage,
+                templateVariables: variables,
+              },
+            },
+          ],
+        });
+
+        await context.sendActivity({ attachments: [varCard] });
+        await next();
+        return;
+      }
+
+      // ==========================================
+      // 6. MANEJAR ENVÍO FINAL DEL TEMPLATE
       // ==========================================
       if (value && value.action === 'contact_lead') {
-        const { leadPhone, leadName } = value;
+        const { leadPhone, leadName, templateName, templateLanguage, templateVariables } = value;
+
+        this.logger.debug(`📥 contact_lead recibido: ${JSON.stringify(value)}`);
 
         if (!leadPhone) {
           await context.sendActivity('⚠️ Error: Debes ingresar un número de teléfono válido.');
@@ -156,10 +263,30 @@ export class TeamsBotHandler extends ActivityHandler {
           return;
         }
 
-        await context.sendActivity(`⏳ Iniciando protocolo de contacto para +${leadPhone}...`);
-        
-        // AQUÍ LLAMAREMOS AL SERVICIO ORQUESTADOR
-        await this.teamsService.iniciarContactoProactivo(leadPhone, leadName || 'Cliente');
+        // Teams puede serializar el array como string al pasar por Action.Submit data.
+        // Se normalizan ambos casos.
+        const variables: string[] = this.parseTemplateVariables(templateVariables);
+
+        // Recolectar los valores de las variables desde los inputs del formulario.
+        // El ID de cada input es var_<contenido>, ej: var_nombre, var_ciudad, var_1
+        const bodyVariables: string[] = variables.map((varTag: string) => {
+          const varKey = varTag.replace(/^\{\{|\}\}$/g, '').trim();
+          const val = (value[`var_${varKey}`] as string) ?? '';
+          return val;
+        });
+
+        this.logger.log(`📤 Template: ${templateName} | Variables: ${JSON.stringify(variables)} | Valores: ${JSON.stringify(bodyVariables)}`);
+
+        await context.sendActivity(`⏳ Enviando template **${templateName}** a +${leadPhone}...`);
+        await this.teamsService.iniciarContactoProactivo(
+          leadPhone,
+          leadName || 'Cliente',
+          templateName,
+          templateLanguage,
+          bodyVariables,
+          variables, // tags para detectar parameter_name en Meta
+        );
+        await next();
         return;
       }
 
@@ -172,5 +299,26 @@ export class TeamsBotHandler extends ActivityHandler {
         // Aquí se podría saludar si  se quisiera, por ahora lo ignoramos
         await next();
     });
+  }
+
+  /**
+   * Normaliza templateVariables que puede llegar como array real o como
+   * string serializado por Teams (ej: '["{{nombre}}","{{ciudad}}"]' o
+   * '{{nombre}},{{ciudad}}').
+   */
+  private parseTemplateVariables(raw: unknown): string[] {
+    if (Array.isArray(raw)) return raw as string[];
+
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed as string[];
+      } catch {
+        // Puede venir como string separado por comas: "{{nombre}},{{ciudad}}"
+        return raw.split(',').map((v) => v.trim()).filter(Boolean);
+      }
+    }
+
+    return [];
   }
 }

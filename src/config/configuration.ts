@@ -1,5 +1,6 @@
 export default () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
+  whatsappWabaId: process.env.WHATSAPP_WABA_ID,
   whatsappToken: process.env.WHATSAPP_TOKEN,
   whatsappPhoneId: process.env.WHATSAPP_PHONE_ID,
   whatsappverifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
