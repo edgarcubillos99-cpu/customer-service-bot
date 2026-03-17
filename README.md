@@ -274,7 +274,7 @@ docker logs -f customer_service_bot
 
 ✔ Prevención de Webhook Duplicados: Meta reintenta envíos si se excede el TTL o hay pérdida de paquetes. Se mantiene una memoria viva y validación en base de datos para omitir solicitudes duplicadas.
 
-✔ Captura Proactiva de Leads: El módulo leads expone endpoints conectados a formularios externos. Al recibir los datos (número, nombre y ciudad), se inserta el registro en la tabla leads con el estado "por contactar". Inmediatamente, el backend utiliza la API de Meta para enviar un message template automático al cliente.
+✔ Captura Proactiva de Leads: El módulo leads expone endpoints conectados a formularios externos. Al recibir los datos (número, nombre y ciudad), se inserta el registro en la tabla leads con el estado "por contactar". El message template de WhatsApp **no** se envía automáticamente; solo puede enviarse de forma manual mediante el comando !herramientas en el bot de Teams.
 
 ✔ Notificación Temprana en Teams: Al enviarse el template al Lead, el backend crea de forma automática un hilo en el canal de Teams. Este hilo avisa a los operadores que se ha contactado a un cliente potencial y queda a la espera de que el usuario responda en WhatsApp para continuar la conversación sobre ese mismo hilo.
 
