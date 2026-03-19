@@ -209,11 +209,90 @@ META_VERIFY_TOKEN=token_de_validación_para_app _de_leads
 
 META_PAGE_ACCESS_TOKEN=tu_token_de_acceso_a_la_pagina_aqui
 
-## 2) ☁️ Configuración en Azure y Teams
+## 2) ☁️ Configuración en Azure, Teams t Business (DESPLIEGUE)
 
 
 Para el correcto funcionamiento del Bot, la infraestructura corporativa debe inicializarse de la siguiente forma:
 
+    1) Configurar Dominio y Certificados (PUBLIC_URL)
+
+    Es obligatorio contar con un dominio y un certificado SSL (HTTPS) válido.
+
+    Esta URL es crítica porque no solo recibirá los Webhooks de Meta y Azure, sino que también será la encargada de servir y mostrar correctamente los archivos multimedia (imágenes, documentos) dentro de las tarjetas interactivas en Teams. Sin HTTPS, estas plataformas rechazarán la conexión.
+
+    2) Crear Base de Datos MySQL y Servicios Adicionales
+
+    Levantar una instancia de MySQL (versión 8+ recomendada) y crear la base de datos junto con su usuario y contraseña, inyectando estas  credenciales en DB_HOST, DB_USER y DB_PASSWORD.
+
+    Seguridad (Opcional): Si la empresa manejará archivos adjuntos de clientes, es altamente recomendable levantar un contenedor de ClamAV y activar la variable ENABLE_CLAMAV=true para escanear los archivos antes de procesarlos.
+
+    3) Crear la App de Azure Portal con Permisos de Graph API
+
+    En Microsoft Entra ID (Azure AD), crear un "App Registration" con el tipo de cuenta configurado como SingleTenant.
+
+    Generar el ID de la aplicación (MICROSOFT_APP_ID) y crear un Client Secret (MICROSOFT_APP_PASSWORD).
+
+    Permisos de Graph API requeridos: Para que el bot pueda leer y escribir en los hilos del canal, asegúrate de otorgar y dar el "Admin Consent" a los siguientes permisos de aplicación (Application Permissions):
+
+        ChannelMessage.UpdatePolicyViolation.All
+        
+        Files.Read.All
+        
+        Sites.Read.All 
+
+        ChannelMessage.Read.All
+
+        ChannelMessage.Send
+
+        Group.ReadWrite.All (Necesario para interactuar libremente dentro de los equipos y canales).
+
+    4) Creación del Azure Bot y Configuración del Mismo
+
+    Crear el recurso "Azure Bot" en el portal de Azure y vincularlo al App ID generado en el paso anterior.
+
+    En la sección de configuración del Bot, establecer el Messaging Endpoint apuntando a la ruta del webhook del backend (ejemplo: https://<PUBLIC_URL>/api/messages).
+
+    En la sección "Channels", añadir y habilitar el canal de Microsoft Teams.
+
+    5) Crear el Bot de Teams con Developer Portal
+
+    Ingresar al Developer Portal de Teams y crear una nueva App.
+
+    En la sección "App features", agregar un "Bot" y vincularlo con el mismo ID de la aplicación de Azure.
+
+    Definir los "Scopes" (Alcances): Marcar Team y Channel para que el bot tenga autoridad de crear hilos.
+
+    Configurar en el manifiesto los comandos que el operador podrá usar (como !herramientas para enviar plantillas a números externos o los comandos de bloqueo/desbloqueo de contactos).
+
+    6) Publicar el Bot en el Canal de Uso
+
+    Exportar el paquete de la aplicación (.zip) desde el Developer Portal.
+
+    Realizar la instalación (sideloading) de la aplicación en el Team específico de la empresa.
+
+    Obtener el TEAMS_CHANNEL_ID exacto (y opcionalmente el TEAMS_TEAM_ID) donde se operará la atención al cliente, y asignarlos en las variables de entorno.
+
+    7) Creación de Apps de Meta Business (WhatsApp y Leads)
+
+    En Meta for Developers, crear una aplicación de tipo "Negocios" y agregar los productos de WhatsApp y Webhooks.
+
+    WhatsApp: Generar un token de acceso permanente usando un "System User" de Meta (WHATSAPP_TOKEN) y anotar el ID del número de teléfono (WHATSAPP_PHONE_ID). Adicionalmente, se debe crear la plantilla de mensaje (Message Template) para los clientes potenciales y esperar su aprobación por parte de Meta.
+
+    Leads (Formularios): Configurar los permisos de lectura de leads con un token de acceso a la página (META_PAGE_ACCESS_TOKEN).
+
+    8) Despliegue del Backend
+
+    Preparar el entorno de producción utilizando Docker. Asegúrate de configurar todo el archivo .env.
+
+    Al desplegar este backend construido sobre NestJS, también se deben configurar las credenciales de Ubersmith (UBERSMITH_API_URL, usuario y contraseña). Esto es vital para que las tarjetas de Teams (Adaptive Cards o Hero Cards) puedan generar y mostrar el botón dinámico con el enlace al perfil del cliente en el CRM.
+
+    Configurar los horarios de atención inyectando las variables BUSINESS_HOURS_START, BUSINESS_HOURS_END y los días laborales correspondientes.
+
+    9) Conectar con los Verify Token (Webhooks)
+
+    En el panel de Meta, ir a WhatsApp > Configuración, agregar la URL de producción (https://<PUBLIC_URL>/whatsapp/webhook) y utilizar una cadena de texto segura como WHATSAPP_VERIFY_TOKEN. Suscribirse a los eventos de messages.
+
+    En la sección de Webhooks genéricos (objeto Page), añadir el endpoint correspondiente para los formularios usando el META_VERIFY_TOKEN, y suscribirse al evento leadgen.
     Azure Active Directory (App Registration):
 
         Crear una aplicación de Inquilino Único (Single Tenant).
@@ -225,21 +304,6 @@ Para el correcto funcionamiento del Bot, la infraestructura corporativa debe ini
           -ChannelMessage.UpdatePolicyViolation.All
           -Files.Read.All
           -Sites.Read.All 
-
-    Azure Bot (Recurso):
-
-        Enlazar el MICROSOFT_APP_ID.
-
-        En el Endpoint de Mensajería, configurar la URL donde esté desplegado tu proyecto bajo HTTPS apuntando a /api/messages.
-        (esta URL debe ser:"PUBLIC_URL/teams/webhook/messages")
-
-        Agregar el "Canal" de Microsoft Teams a tu Bot de Azure.
-
-    Manifest y MS Teams:
-
-        Usar el Developer Portal de Teams para compilar tu bot y cargarlo en el TEAMS_TEAM_ID.
-
-        El bot debe tener acceso al canal específico indicado en TEAMS_CHANNEL_ID para ser capaz de inyectar hilos proactivos y responder.
 ---
 
 # 🐳 Ejecución con Docker
