@@ -294,16 +294,6 @@ Para el correcto funcionamiento del Bot, la infraestructura corporativa debe ini
 
     En la sección de Webhooks genéricos (objeto Page), añadir el endpoint correspondiente para los formularios usando el META_VERIFY_TOKEN, y suscribirse al evento leadgen.
     Azure Active Directory (App Registration):
-
-        Crear una aplicación de Inquilino Único (Single Tenant).
-
-        Generar el secreto en Certificates & Secrets.
-
-        Consolidar permisos en API Permissions si es necesario para leer archivos de Microsoft Graph.
-          -ChannelMessage.Read.All
-          -ChannelMessage.UpdatePolicyViolation.All
-          -Files.Read.All
-          -Sites.Read.All 
 ---
 
 # 🐳 Ejecución con Docker
