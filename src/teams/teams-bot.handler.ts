@@ -196,15 +196,12 @@ export class TeamsBotHandler extends ActivityHandler {
           // Obtener el contenido de la variable: "nombre", "ciudad", "1", etc.
           const varKey = varTag.replace(/^\{\{|\}\}$/g, '').trim();
           const inputId = `var_${varKey}`;
-          const isNameLike = ['nombre', 'name', 'cliente', 'client'].some((k) =>
-            varKey.toLowerCase().includes(k),
-          );
           return {
             type: 'Input.Text',
             id: inputId,
             label: `${varTag}:`,
-            placeholder: isNameLike ? (leadName || 'Nombre del cliente') : `Valor para ${varTag}`,
-            value: isNameLike ? (leadName || '') : '',
+            placeholder: `Valor para ${varTag}`,
+            value: '',
           };
         });
 
