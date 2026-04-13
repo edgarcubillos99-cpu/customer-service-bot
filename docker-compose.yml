@@ -1,10 +1,24 @@
 services:
+  clamav:
+    image: clamav/clamav:latest
+    container_name: clamav-service
+    restart: unless-stopped
+    # Puerto en el host (por defecto 3310). El servicio escucha siempre 3310 dentro de la red Docker.
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    # La imagen oficial ya define HEALTHCHECK (clamdcheck.sh, start-period ~6m en primera descarga de firmas).
+
   app:
     build:
       context: .
       dockerfile: dockerfile
     container_name: whatsapp-teams-bot
     restart: always
+    depends_on:
+      clamav:
+        condition: service_healthy
     ports:
       - "${PORT}:${PORT}"
     environment:
@@ -21,10 +35,11 @@ services:
       WHATSAPP_PHONE_ID: "${WHATSAPP_PHONE_ID}"
       WHATSAPP_VERIFY_TOKEN: "${WHATSAPP_VERIFY_TOKEN}"
       PUBLIC_URL: "${PUBLIC_URL}"
-      ENABLE_CLAMAV: "${ENABLE_CLAMAV}"
-      CLAMAV_USE_DAEMON: "${CLAMAV_USE_DAEMON}"
-      CLAMAV_HOST: "${CLAMAV_HOST}"
-      CLAMAV_PORT: "${CLAMAV_PORT}"
+      # Con .env vacío, Compose aplica estos valores (red interna: host = nombre del servicio clamav).
+      ENABLE_CLAMAV: "${ENABLE_CLAMAV:-true}"
+      CLAMAV_USE_DAEMON: "${CLAMAV_USE_DAEMON:-true}"
+      CLAMAV_HOST: "${CLAMAV_HOST:-clamav}"
+      CLAMAV_PORT: "${CLAMAV_PORT:-3310}"
       BUSINESS_HOURS_START: "${BUSINESS_HOURS_START}"
       BUSINESS_HOURS_END: "${BUSINESS_HOURS_END}"
       BUSINESS_DAYS: "${BUSINESS_DAYS}"
@@ -40,3 +55,6 @@ services:
       META_PAGE_ACCESS_TOKEN: "${META_PAGE_ACCESS_TOKEN}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  clamav-data:
