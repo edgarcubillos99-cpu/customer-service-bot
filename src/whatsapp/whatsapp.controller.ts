@@ -69,6 +69,15 @@ export class WhatsappController {
       const changes = entry?.changes?.[0];
       const value = changes?.value;
 
+      // FILTRO PARA IGNORAR EL NÚMERO DE PRUEBAS
+      const incomingPhoneNumberId = value?.metadata?.phone_number_id;
+      const productionPhoneId = this.configService.get<string>('whatsappPhoneId');
+
+      if (incomingPhoneNumberId && productionPhoneId && incomingPhoneNumberId !== productionPhoneId) {
+        this.logger.debug(`⏭️ Webhook ignorado: dirigido al número ${incomingPhoneNumberId} (Diferente al de producción)`);
+        return; // Detenemos la ejecución aquí, no hacemos nada más
+      }
+
       // Ignorar actualizaciones de estado (delivered, read, etc.)
       if (value?.statuses) {
         return;
