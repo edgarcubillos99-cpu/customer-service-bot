@@ -148,7 +148,7 @@ export class TeamsBotHandler extends ActivityHandler {
             {
               type: 'Input.Text',
               id: 'leadPhone',
-              placeholder: 'Ej: 573001234567 (Sin el +)',
+              placeholder: 'Ej: 17876551919 (Sin el +)',
               label: 'Número de WhatsApp:',
               isRequired: true,
             },

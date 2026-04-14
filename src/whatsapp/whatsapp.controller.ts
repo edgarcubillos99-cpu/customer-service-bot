@@ -78,8 +78,9 @@ export class WhatsappController {
         return; // Detenemos la ejecución aquí, no hacemos nada más
       }
 
-      // Ignorar actualizaciones de estado (delivered, read, etc.)
-      if (value?.statuses) {
+      // Solo notificaciones de estado (sin mensaje entrante): delivered, read, etc.
+      const hasIncomingMessages = Array.isArray(value?.messages) && value.messages.length > 0;
+      if (value?.statuses && !hasIncomingMessages) {
         return;
       }
 
@@ -231,14 +232,25 @@ export class WhatsappController {
         // Las reacciones no necesitan ser reenviadas
         return {};
 
+      // Quick reply en templates (Meta): type "button", no "interactive"
+      case 'button': {
+        const btn = message.button;
+        const label = btn?.text || btn?.payload;
+        return label ? { text: String(label) } : {};
+      }
+
       case 'interactive':
-        // Respuestas a botones/listas
+        // Respuestas a botones/listas (mensajes interactivos estándar)
         const interactiveType = message.interactive?.type;
         if (interactiveType === 'button_reply') {
-          return { text: message.interactive?.button_reply?.title };
+          const br = message.interactive?.button_reply;
+          const t = br?.title || br?.id;
+          return t ? { text: String(t) } : { text: '[Botón]' };
         }
         if (interactiveType === 'list_reply') {
-          return { text: message.interactive?.list_reply?.title };
+          const lr = message.interactive?.list_reply;
+          const t = lr?.title || lr?.id;
+          return t ? { text: String(t) } : { text: '[Lista]' };
         }
         return { text: '[Respuesta interactiva]' };
 
